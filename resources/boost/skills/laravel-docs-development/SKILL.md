@@ -52,7 +52,7 @@ Use `config/laravel-docs.php` to set:
 
 - `sections.api`, `sections.database`, and `sections.code`
 - `api.scribe_dir` and `api.generated_path`
-- `code.executable`, `code.auto_download_phar`, `code.phar_url`, `code.phar_path`, `code.cache_path`, and `code.paths`
+- `code.executable`, `code.auto_download_phar`, `code.link_external_docs`, `code.phar_url`, `code.phar_path`, `code.cache_path`, and `code.paths`
 - `api.generated_path` when Scribe writes structured output outside `public/docs`
 - `database.connection` when database docs should use a named Laravel connection
 - output paths under `storage/app/laravel-docs`

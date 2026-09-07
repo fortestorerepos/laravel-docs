@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelDocs\LaravelDocs\Generators;
 
+use Composer\InstalledVersions;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Filesystem\Filesystem;
 
@@ -35,6 +36,15 @@ class StaticSiteGenerator
      */
     private function html(array $data, string $activeTab): string
     {
+        $data['_meta'] = [
+            'external_docs' => [
+                'enabled' => (bool) config('laravel-docs.code.link_external_docs', true),
+                'laravel_api_version' => $this->packageMajorVersion('laravel/framework')
+                    ?? $this->packageMajorVersion('illuminate/support')
+                    ?? 'master',
+            ],
+        ];
+
         $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 
         return $this->views->make('laravel-docs::static.index', [
@@ -70,5 +80,20 @@ class StaticSiteGenerator
         }
 
         return __DIR__.'/../../resources/views/static/assets/'.$filename;
+    }
+
+    private function packageMajorVersion(string $package): ?string
+    {
+        if (! class_exists(InstalledVersions::class) || ! InstalledVersions::isInstalled($package)) {
+            return null;
+        }
+
+        $version = InstalledVersions::getPrettyVersion($package);
+
+        if ($version === null || ! preg_match('/(\d+)/', $version, $matches)) {
+            return null;
+        }
+
+        return $matches[1].'.x';
     }
 }

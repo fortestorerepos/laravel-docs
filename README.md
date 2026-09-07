@@ -55,6 +55,7 @@ return [
     'code' => [
         'executable' => 'phpdoc',
         'auto_download_phar' => true,
+        'link_external_docs' => true,
         'phar_url' => 'https://phpdoc.org/phpDocumentor.phar',
         'phar_path' => storage_path('app/laravel-docs/bin/phpDocumentor.phar'),
         'cache_path' => storage_path('app/laravel-docs/cache/phpdocumentor'),
@@ -75,6 +76,7 @@ return [
 ```
 
 Set `laravel-docs.database.connection` to a named Laravel database connection when you do not want to use the default connection.
+Set `laravel-docs.code.link_external_docs` to `false` when generated code pages should avoid external framework documentation links.
 
 ## Usage
 

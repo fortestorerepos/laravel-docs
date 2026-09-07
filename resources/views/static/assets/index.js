@@ -1,5 +1,6 @@
 const docs = JSON.parse(document.getElementById('docs-data').textContent);
 const labels = {api:'API', database:'DB', code:'Code'};
+const externalDocs = docs._meta?.external_docs || {};
 const activeTab = document.body.dataset.activeTab || 'api';
 let state = {
   codeGroupBy: localStorage.getItem('laravel-docs-code-group-by') || 'namespaces',
@@ -141,7 +142,10 @@ function visibility(value){return value ? flag(value, value.charAt(0).toUpperCas
 function flag(type, label){return `<span class="flag flag-${esc(type)}">${esc(label)}</span>`;}
 function linkReference(value){
   const index = typeIndex(value);
-  if (index === null) return `<span class="mono">${esc(shortReference(value))}</span>`;
+  const url = externalTypeUrl(value);
+
+  if (index === null && url === null) return `<span class="mono">${esc(displayReference(value))}</span>`;
+  if (url !== null) return `<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(shortReference(value))}</a>`;
 
   return `<a href="#" onclick="activate(${index});return false;">${esc(shortReference(value))}</a>`;
 }
@@ -152,6 +156,7 @@ function typeIndex(value){
   return index === -1 ? null : index;
 }
 function shortReference(value){const parts = String(value || '').replace(/^\\+/, '').split('\\'); return parts.pop() || value || '';}
+function displayReference(value){return String(value || '').includes('\\') ? String(value) : shortReference(value);}
 function propertySignature(property){
   return `${esc([property.visibility, property.static ? 'static' : ''].filter(Boolean).join(' '))}${property.visibility || property.static ? ' ' : ''}${property.type ? `${typeReference(property.type)} ` : ''}$${esc(property.name)}${property.default ? ` = ${esc(property.default)}` : ''}`;
 }
@@ -184,5 +189,14 @@ function typeReference(type){
 
     return linkReference(part);
   }).join('');
+}
+function externalTypeUrl(value){
+  if (externalDocs.enabled === false) return null;
+
+  const normalized = String(value || '').replace(/^\\+/, '');
+
+  if (!normalized.startsWith('Illuminate\\')) return null;
+
+  return `https://api.laravel.com/docs/${externalDocs.laravel_api_version || 'master'}/${normalized.replaceAll('\\', '/')}.html`;
 }
 render();

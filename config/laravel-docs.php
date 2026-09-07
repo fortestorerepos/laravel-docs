@@ -32,6 +32,7 @@ return [
     'code' => [
         'executable' => 'phpdoc',
         'auto_download_phar' => true,
+        'link_external_docs' => true,
         'phar_url' => 'https://phpdoc.org/phpDocumentor.phar',
         'phar_path' => storage_path('app/laravel-docs/bin/phpDocumentor.phar'),
         'cache_path' => storage_path('app/laravel-docs/cache/phpdocumentor'),

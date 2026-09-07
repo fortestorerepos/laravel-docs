@@ -18,7 +18,8 @@ it('merges the package config', function () {
             'api' => true,
             'database' => true,
             'code' => true,
-        ]);
+        ])
+        ->and(config('laravel-docs.code.link_external_docs'))->toBeTrue();
 });
 
 it('registers and publishes package views', function () {
@@ -30,6 +31,26 @@ it('registers and publishes package views', function () {
 
     expect(view()->exists('laravel-docs::static.index'))->toBeTrue()
         ->and($publishSources)->toContain(realpath(__DIR__.'/../../resources/views'));
+});
+
+it('can disable external documentation links in generated metadata', function () {
+    $files = app(Filesystem::class);
+    $basePath = sys_get_temp_dir().'/laravel-docs-test-'.uniqid();
+
+    config()->set('laravel-docs.code.link_external_docs', false);
+    config()->set('laravel-docs.base_path', $basePath);
+    config()->set('laravel-docs.raw_path', $basePath.'/raw');
+    config()->set('laravel-docs.normalized_path', $basePath.'/normalized');
+    config()->set('laravel-docs.output_path', $basePath.'/generated');
+
+    $files->ensureDirectoryExists($basePath.'/raw/phpdocumentor');
+    $files->ensureDirectoryExists($basePath.'/raw/scribe');
+    $files->put($basePath.'/raw/phpdocumentor/structure.xml', '<project />');
+    $files->put($basePath.'/raw/scribe/collection.json', '{}');
+
+    $this->artisan('docs:generate', ['--skip-tools' => true])->assertSuccessful();
+
+    expect($files->get($basePath.'/generated/code.html'))->toContain('"enabled":false');
 });
 
 it('generates normalized json and a static html site from existing raw outputs', function () {
@@ -161,6 +182,8 @@ XML);
         'data-active-tab="api"',
         '<link rel="stylesheet" href="assets/index.css">',
         '<script src="assets/index.js"></script>',
+        '"enabled":true',
+        'laravel_api_version',
     )
         ->and($html)->not->toContain(
             '#code',
@@ -187,6 +210,10 @@ XML);
             'methodDetails',
             'methodTocName(item)',
             'methodSummaryLink(item)',
+            'externalTypeUrl',
+            'externalDocs.enabled === false',
+            'api.laravel.com/docs',
+            'displayReference(value)',
             'id="${memberId(\'method\', method.name)}"',
             'id="${memberId(\'property\', property.name)}"',
             'Return values',
