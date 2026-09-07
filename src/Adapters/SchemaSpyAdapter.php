@@ -23,7 +23,7 @@ class SchemaSpyAdapter
         $java = $this->findExecutable(
             config('laravel-docs.database.java_executable'),
             'Java',
-            'laravel-docs.database.java_executable'
+            'laravel-docs.database.java_executable',
         );
 
         $jar = config('laravel-docs.database.schemaspy_jar');
@@ -34,7 +34,7 @@ class SchemaSpyAdapter
 
         $command = array_merge(
             [$java, '-jar', $jar, '-o', $outputPath],
-            array_values((array) config('laravel-docs.database.arguments', []))
+            array_values((array) config('laravel-docs.database.arguments', [])),
         );
 
         $process = new Process($command, base_path());

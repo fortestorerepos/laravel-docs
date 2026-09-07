@@ -56,7 +56,7 @@ class GenerateDocsCommand extends Command
             foreach ($normalized as $section => $data) {
                 $files->put(
                     $normalizedPath.'/'.$section.'.json',
-                    json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL
+                    json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
                 );
             }
 

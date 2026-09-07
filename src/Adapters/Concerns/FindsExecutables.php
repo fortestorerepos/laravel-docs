@@ -23,7 +23,7 @@ trait FindsExecutables
             throw new RuntimeException("{$toolName} executable not found. Configure {$configKey}.");
         }
 
-        $resolved = (new ExecutableFinder())->find($executable);
+        $resolved = (new ExecutableFinder)->find($executable);
 
         if ($resolved === null) {
             throw new RuntimeException("{$toolName} executable not found. Configure {$configKey}.");

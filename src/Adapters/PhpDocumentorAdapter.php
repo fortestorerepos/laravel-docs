@@ -22,7 +22,7 @@ class PhpDocumentorAdapter
         $executable = $this->findExecutable(
             config('laravel-docs.code.executable'),
             'phpDocumentor',
-            'laravel-docs.code.executable'
+            'laravel-docs.code.executable',
         );
 
         $this->files->ensureDirectoryExists($outputPath);
