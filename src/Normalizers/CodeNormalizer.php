@@ -79,13 +79,15 @@ class CodeNormalizer
             'final' => $this->booleanAttribute($node, 'final'),
             'abstract' => $this->booleanAttribute($node, 'abstract'),
             'interfaces' => $this->valuesFrom($node, ['implements', 'interface']),
+            'backing_type' => $type === 'enum' ? $this->enumBackingType($node, $source) : '',
+            'cases' => $type === 'enum' ? $this->cases($node, $source) : [],
             'methods' => $methods,
             'properties' => $this->properties($node, $methods, $source),
         ];
     }
 
     /**
-     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}  $source
+     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>, enum_backing_type: string, enum_cases: array<string, array{name: string, value: string, summary: string, line: int}>}  $source
      * @return list<array<string, mixed>>
      */
     private function methods(SimpleXMLElement $node, array $source): array
@@ -142,7 +144,7 @@ class CodeNormalizer
 
     /**
      * @param  list<array<string, mixed>>  $methods
-     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}  $source
+     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>, enum_backing_type: string, enum_cases: array<string, array{name: string, value: string, summary: string, line: int}>}  $source
      * @return list<array{name: string, type: string, summary: string}>
      */
     private function properties(SimpleXMLElement $node, array $methods, array $source): array
@@ -193,14 +195,62 @@ class CodeNormalizer
     }
 
     /**
-     * @return array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}
+     * @param  array{enum_backing_type: string}  $source
+     */
+    private function enumBackingType(SimpleXMLElement $node, array $source): string
+    {
+        return $this->attribute($node, 'backingType')
+            ?: $this->attribute($node, 'backing_type')
+            ?: $this->textFromDirectChild($node, 'backingType')
+            ?: $this->textFromDirectChild($node, 'backing_type')
+            ?: $source['enum_backing_type'];
+    }
+
+    /**
+     * @param  array{enum_cases: array<string, array{name: string, value: string, summary: string, line: int}>}  $source
+     * @return list<array{name: string, full_name: string, value: string, summary: string, description: string, line: int}>
+     */
+    private function cases(SimpleXMLElement $node, array $source): array
+    {
+        $cases = [];
+
+        foreach ($node->xpath('./case|./constant') ?: [] as $case) {
+            $name = $this->value($case, 'name');
+            $sourceCase = $source['enum_cases'][$name] ?? ['value' => '', 'summary' => '', 'line' => 0];
+
+            $cases[] = [
+                'name' => $name,
+                'full_name' => $this->value($case, 'full_name'),
+                'value' => html_entity_decode($this->value($case, 'value') ?: $sourceCase['value'], ENT_QUOTES | ENT_XML1),
+                'summary' => $this->summary($case) ?: $sourceCase['summary'],
+                'description' => $this->longDescription($case),
+                'line' => $this->integerAttribute($case, 'line') ?: $sourceCase['line'],
+            ];
+        }
+
+        if ($cases !== []) {
+            return $cases;
+        }
+
+        return array_map(fn (array $case): array => [
+            'name' => $case['name'],
+            'full_name' => '',
+            'value' => $case['value'],
+            'summary' => $case['summary'],
+            'description' => '',
+            'line' => $case['line'],
+        ], array_values($source['enum_cases']));
+    }
+
+    /**
+     * @return array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>, enum_backing_type: string, enum_cases: array<string, array{name: string, value: string, summary: string, line: int}>}
      */
     private function sourceMetadata(string $file): array
     {
         $path = $this->sourceFile($file);
 
         if ($path === null) {
-            return ['imports' => [], 'method_returns' => [], 'property_types' => []];
+            return ['imports' => [], 'method_returns' => [], 'property_types' => [], 'enum_backing_type' => '', 'enum_cases' => []];
         }
 
         $source = $this->files->get($path);
@@ -210,6 +260,8 @@ class CodeNormalizer
             'imports' => $imports,
             'method_returns' => $this->sourceMethodReturns($source, $imports),
             'property_types' => $this->sourcePropertyTypes($source, $imports),
+            'enum_backing_type' => $this->sourceEnumBackingType($source, $imports),
+            'enum_cases' => $this->sourceEnumCases($source),
         ];
     }
 
@@ -282,6 +334,55 @@ class CodeNormalizer
         }
 
         return $types;
+    }
+
+    /**
+     * @param  array<string, string>  $imports
+     */
+    private function sourceEnumBackingType(string $source, array $imports): string
+    {
+        if (! preg_match('/enum\s+[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*([^\s{]+)/m', $source, $match)) {
+            return '';
+        }
+
+        return $this->resolveImportedType($match[1], $imports);
+    }
+
+    /**
+     * @return array<string, array{name: string, value: string, summary: string, line: int}>
+     */
+    private function sourceEnumCases(string $source): array
+    {
+        $cases = [];
+        $pendingComment = '';
+        $lines = preg_split('/\R/', $source) ?: [];
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^\s*\/\/\s*(.+)\s*$/', $line, $comment)) {
+                $pendingComment = trim($comment[1]);
+
+                continue;
+            }
+
+            if (preg_match('/^\s*case\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s*=\s*([^;]+))?\s*;/', $line, $case)) {
+                $name = $case[1];
+                $cases[$name] = [
+                    'name' => $name,
+                    'value' => isset($case[2]) ? trim($case[2]) : '',
+                    'summary' => $pendingComment,
+                    'line' => $index + 1,
+                ];
+                $pendingComment = '';
+
+                continue;
+            }
+
+            if (trim($line) !== '') {
+                $pendingComment = '';
+            }
+        }
+
+        return $cases;
     }
 
     /**

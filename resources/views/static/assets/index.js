@@ -77,7 +77,7 @@ function dbDetail(tableInfo){
   return `<h1>${esc(tableInfo.name)}</h1><h2>Columns</h2>${table(['Name','Type','Nullable','Default','Primary'],list(tableInfo.columns).map(c=>[c.name,c.type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no']))}<h2>Primary Keys</h2>${table(['Column'],list(tableInfo.primary_keys).map(k=>[k]))}<h2>Foreign Keys</h2>${table(['Name','Column','References'],list(tableInfo.foreign_keys).map(k=>[k.name,k.column,`${k.references_table}.${k.references_column}`]))}<h2>Indexes</h2>${table(['Name','Unique','Columns'],list(tableInfo.indexes).map(i=>[i.name,i.unique?'yes':'no',list(i.columns).join(', ')]))}`;
 }
 function codeDetail(type){
-  return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;
+  return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Cases', type.cases || [], 'case')}${enumDetails(type)}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;
 }
 function codeHeader(type){
   const segments = (type.namespace || '').split('\\').filter(Boolean);
@@ -85,10 +85,10 @@ function codeHeader(type){
   const implementsText = (type.interfaces || []).length ? `<p class="implements">implements ${list(type.interfaces).map(linkReference).join(', ')}</p>` : '';
   const fileText = type.file ? `<a href="#source">${esc(basename(type.file))}</a>${type.line ? ` : ${esc(type.line)}` : ''}` : '';
 
-  return `${breadcrumb}<div class="code-heading"><div>${typeBadge(type.type)}<h1>${esc(type.name)}</h1>${implementsText}</div><div class="source-link">${fileText}</div></div><div class="flags">${flag(type.type, typeLabel(type.type))}${type.final ? flag('final','Final') : ''}${type.abstract ? flag('abstract','Abstract') : ''}</div>${type.summary ? `<p class="lead">${esc(type.summary)}</p>` : ''}${type.description ? `<p>${esc(type.description)}</p>` : ''}<div id="source" class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${type.parent ? linkReference(type.parent) : 'None'}</span><strong>File</strong><span>${type.file ? `${esc(type.file)}${type.line ? `:${esc(type.line)}` : ''}` : 'Not available'}</span></div>`;
+  return `${breadcrumb}<div class="code-heading"><div>${typeBadge(type.type)}<h1>${esc(type.name)}</h1>${implementsText}</div><div class="source-link">${fileText}</div></div><div class="flags">${flag(type.type, typeLabel(type.type))}${type.final ? flag('final','Final') : ''}${type.abstract ? flag('abstract','Abstract') : ''}</div>${type.summary ? `<p class="lead">${esc(type.summary)}</p>` : ''}${type.description ? `<p>${esc(type.description)}</p>` : ''}<div id="source" class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${type.parent ? linkReference(type.parent) : 'None'}</span>${type.type === 'enum' ? `<strong>Backing type</strong><span>${type.backing_type ? typeReference(type.backing_type) : 'None'}</span>` : ''}<strong>File</strong><span>${type.file ? `${esc(type.file)}${type.line ? `:${esc(type.line)}` : ''}` : 'Not available'}</span></div>`;
 }
 function codeToc(type){
-  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({label: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({label:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type ? typeReference(item.type) : ''})))}${tocBlock('Methods', list(type.methods).map(item => ({label:methodTocName(item), href:`#${memberId('method', item.name)}`, detail:item.return_type ? typeReference(item.return_type) : '', summary:item.summary})))}</div></section>`;
+  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({label: shortReference(item), href:'#interfaces'})))}${tocBlock('Cases', list(type.cases).map(item => ({label:item.name, href:`#${memberId('case', item.name)}`, detail:item.value ? esc(item.value) : '', summary:item.summary})))}${tocBlock('Properties', list(type.properties).map(item => ({label:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type ? typeReference(item.type) : ''})))}${tocBlock('Methods', list(type.methods).map(item => ({label:methodTocName(item), href:`#${memberId('method', item.name)}`, detail:item.return_type ? typeReference(item.return_type) : '', summary:item.summary})))}</div></section>`;
 }
 function tocBlock(title, entries){
   if (!entries.length) return '';
@@ -101,7 +101,24 @@ function memberSummary(title, entries, kind){
     return `<section id="interfaces"><h2>Interfaces</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge('interface')}<div><a href="#interfaces">${esc(shortReference(item))}</a></div></div>`).join('')}</div></section>`;
   }
 
+  if (kind === 'case') {
+    return `<section id="cases"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row no-badge"><div>${caseSummaryLink(item)}${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
+  }
+
   return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div>${kind === 'method' ? methodSummaryLink(item) : propertySummaryLink(item)}${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
+}
+function enumDetails(type){
+  const cases = list(type.cases);
+  if (type.type !== 'enum' || !cases.length) return '';
+
+  const declaration = `enum ${type.name || 'Enum'}${type.backing_type ? `: ${type.backing_type}` : ''}`;
+  const rows = [];
+  cases.forEach(item => {
+    if (item.summary) rows.push(`<span class="enum-comment">// ${esc(item.summary)}</span>`);
+    rows.push(`<span id="${memberId('case', item.name)}" class="enum-case">case ${esc(item.name)}${item.value ? ` = ${esc(item.value)}` : ''};</span>`);
+  });
+
+  return `<section><h2>Enum Cases</h2><pre class="enum-source"><span>${esc(declaration)}</span><span>{</span>${rows.map(row=>`<span>    ${row}</span>`).join('')}<span>}</span></pre></section>`;
 }
 function propertyDetails(type){
   const properties = list(type.properties);
@@ -133,10 +150,11 @@ function memberSource(type, member){
 }
 function onThisPage(type){
   const interfaces = list(type.interfaces);
+  const cases = list(type.cases);
   const properties = list(type.properties);
   const methods = list(type.methods);
 
-  return `<nav class="on-page"><h2>On this page</h2><p>Table Of Contents</p>${interfaces.length ? '<a href="#interfaces">Interfaces</a>' : ''}${properties.length ? '<a href="#properties">Properties</a>' : ''}${methods.length ? '<a href="#methods">Methods</a>' : ''}${properties.length ? `<h3>Properties</h3>${properties.map(property=>`<a href="#${memberId('property', property.name)}">$${esc(property.name)}</a>`).join('')}` : ''}${methods.length ? `<h3>Methods</h3>${methods.map(method=>`<a href="#${memberId('method', method.name)}">${esc(method.name)}()</a>`).join('')}` : ''}</nav>`;
+  return `<nav class="on-page"><h2>On this page</h2><p>Table Of Contents</p>${interfaces.length ? '<a href="#interfaces">Interfaces</a>' : ''}${cases.length ? '<a href="#cases">Cases</a>' : ''}${properties.length ? '<a href="#properties">Properties</a>' : ''}${methods.length ? '<a href="#methods">Methods</a>' : ''}${cases.length ? `<h3>Cases</h3>${cases.map(item=>`<a href="#${memberId('case', item.name)}">${esc(item.name)}</a>`).join('')}` : ''}${properties.length ? `<h3>Properties</h3>${properties.map(property=>`<a href="#${memberId('property', property.name)}">$${esc(property.name)}</a>`).join('')}` : ''}${methods.length ? `<h3>Methods</h3>${methods.map(method=>`<a href="#${memberId('method', method.name)}">${esc(method.name)}()</a>`).join('')}` : ''}</nav>`;
 }
 function visibility(value){return value ? flag(value, value.charAt(0).toUpperCase() + value.slice(1)) : '';}
 function flag(type, label){return `<span class="flag flag-${esc(type)}">${esc(label)}</span>`;}
@@ -170,6 +188,9 @@ function methodTocName(method){
 }
 function methodSummaryLink(method){
   return `<a href="#${memberId('method', method.name)}" class="mono">${esc(methodTocName(method))}</a>${method.return_type ? ` : <span class="mono">${typeReference(method.return_type)}</span>` : ''}`;
+}
+function caseSummaryLink(item){
+  return `<a href="#${memberId('case', item.name)}" class="mono">${esc(item.name)}</a>${item.value ? ` = <span class="mono">${esc(item.value)}</span>` : ''}`;
 }
 function methodSignature(method){
   const params = (method.parameters||[]).map(p => `${p.type ? typeReference(p.type) + ' ' : ''}$${esc(p.name || 'parameter')}${p.default ? ' = ' + esc(p.default) : ''}`).join(', ');

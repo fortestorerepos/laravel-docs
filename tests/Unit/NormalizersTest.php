@@ -122,6 +122,78 @@ XML);
         ->and($type['methods'][1]['return_type'])->toBe('\App\Models\User');
 });
 
+it('normalizes enum backing types and case values', function () {
+    $files = app(Filesystem::class);
+    $basePath = sys_get_temp_dir().'/laravel-docs-code-enum-'.uniqid();
+    $rawPath = $basePath.'/raw';
+    $sourcePath = $basePath.'/app';
+
+    $files->ensureDirectoryExists($rawPath);
+    $files->ensureDirectoryExists($sourcePath.'/Enums');
+    config()->set('laravel-docs.code.paths', [$sourcePath]);
+
+    $files->put($sourcePath.'/Enums/EntityType.php', <<<'PHP'
+<?php
+
+namespace App\Enums;
+
+enum EntityType: string
+{
+    // Organization
+    case Company = 'company';
+    case BusinessUnit = 'business_unit';
+
+    // Commercial
+    case Channel = 'channel';
+}
+PHP);
+
+    $files->put($rawPath.'/structure.xml', <<<'XML'
+<project>
+  <file path="Enums/EntityType.php">
+    <enum namespace="\App\Enums" line="5">
+      <name>EntityType</name>
+      <full_name>\App\Enums\EntityType</full_name>
+      <case line="8">
+        <name>Company</name>
+        <full_name>\App\Enums\EntityType::Company</full_name>
+        <value>&#039;company&#039;</value>
+      </case>
+      <case line="9">
+        <name>BusinessUnit</name>
+        <full_name>\App\Enums\EntityType::BusinessUnit</full_name>
+        <value>&#039;business_unit&#039;</value>
+      </case>
+      <case line="12">
+        <name>Channel</name>
+        <full_name>\App\Enums\EntityType::Channel</full_name>
+        <value>&#039;channel&#039;</value>
+      </case>
+    </enum>
+  </file>
+</project>
+XML);
+
+    $normalized = app(CodeNormalizer::class)->normalize($rawPath);
+    $type = $normalized['classes'][0];
+
+    expect($type['type'])->toBe('enum')
+        ->and($type['backing_type'])->toBe('string')
+        ->and($type['cases'])->toHaveCount(3)
+        ->and($type['cases'][0])->toMatchArray([
+            'name' => 'Company',
+            'value' => "'company'",
+            'summary' => 'Organization',
+            'line' => 8,
+        ])
+        ->and($type['cases'][2])->toMatchArray([
+            'name' => 'Channel',
+            'value' => "'channel'",
+            'summary' => 'Commercial',
+            'line' => 12,
+        ]);
+});
+
 it('reads database documentation from laravel schema metadata', function () {
     Schema::dropIfExists('assets');
     Schema::dropIfExists('users');
