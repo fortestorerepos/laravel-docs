@@ -1,7 +1,12 @@
 const docs = JSON.parse(document.getElementById('docs-data').textContent);
 const labels = {api:'API', database:'DB', code:'Code'};
 const activeTab = document.body.dataset.activeTab || 'api';
-let state = {tab: ['api','database','code'].includes(activeTab) ? activeTab : 'api', selected: 0};
+let state = {
+  codeGroupBy: localStorage.getItem('laravel-docs-code-group-by') || 'namespaces',
+  selected: 0,
+  tab: ['api','database','code'].includes(activeTab) ? activeTab : 'api',
+};
+if (!['namespaces','types'].includes(state.codeGroupBy)) state.codeGroupBy = 'namespaces';
 const sidebar = document.getElementById('sidebar');
 const content = document.getElementById('content');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -18,7 +23,18 @@ function renderSidebar(){
 }
 function renderGroupedSidebar(entries, tab){
   const groups = sidebarGroups(entries);
-  sidebar.innerHTML = groups.map(group => `<details class="namespace-group" ${group.open ? 'open' : ''}><summary>${group.badge ? typeBadge(group.badge) : ''}<span class="mono">${esc(group.name)}</span></summary><div class="namespace-items">${group.entries.map(entry => `<button class="item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('')}</div></details>`).join('');
+  const switcher = tab === 'code' ? codeSidebarSwitcher() : '';
+  sidebar.innerHTML = switcher + groups.map(group => `<details class="namespace-group" ${group.open ? 'open' : ''}><summary>${group.badge ? typeBadge(group.badge) : ''}<span class="mono">${esc(group.name)}</span></summary><div class="namespace-items">${group.entries.map(entry => `<button class="item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('')}</div></details>`).join('');
+}
+function codeSidebarSwitcher(){
+  return `<div class="sidebar-switcher" aria-label="Code sidebar grouping"><button type="button" class="${state.codeGroupBy === 'namespaces' ? 'active' : ''}" onclick="setCodeGroupBy('namespaces')">Namespaces</button><button type="button" class="${state.codeGroupBy === 'types' ? 'active' : ''}" onclick="setCodeGroupBy('types')">Types</button></div>`;
+}
+function setCodeGroupBy(groupBy){
+  if (!['namespaces','types'].includes(groupBy)) return;
+  state.codeGroupBy = groupBy;
+  state.selected = 0;
+  localStorage.setItem('laravel-docs-code-group-by', groupBy);
+  render();
 }
 function sidebarGroups(entries){
   const groups = new Map();
@@ -40,8 +56,14 @@ function renderContent(){
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
   if (tab === 'database') return (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span><div class="muted">${(table.columns||[]).length} columns</div>`}));
-  return (docs.code.classes||[]).map(type => ({group:type.namespace||'Global',groupType:'namespace',item:type,sidebar:`<div class="type-row">${typeBadge(type.type)}<span><span class="mono">${esc(type.name)}</span><div class="muted">${esc(typeLabel(type.type))}</div></span></div>`}));
+  return (docs.code.classes||[]).map(type => {
+    const group = state.codeGroupBy === 'types' ? typeGroup(type.type) : type.namespace || 'Global';
+    const groupType = state.codeGroupBy === 'types' ? type.type : 'namespace';
+
+    return {group,groupType,item:type,sidebar:`<div class="type-row">${typeBadge(type.type)}<span><span class="mono">${esc(type.name)}</span><div class="muted">${esc(typeLabel(type.type))}</div></span></div>`};
+  });
 }
+function typeGroup(type){return ({class:'Classes',interface:'Interfaces',trait:'Traits',enum:'Enums'}[type]||'Types');}
 function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace'}[type]||type||'Type');}
 function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N'}[type]||'C');}
 function typeBadge(type){const label=typeLabel(type);return `<span class="type-badge" title="${esc(label)}" aria-label="${esc(label)}">${typeIcon(type)}</span>`;}

@@ -60,6 +60,11 @@ it('generates normalized json and a static html site from existing raw outputs',
       </docblock>
     </method>
   </class>
+  <interface namespace="\App\Contracts">
+    <name>AssignsAssets</name>
+    <full_name>\App\Contracts\AssignsAssets</full_name>
+    <docblock><description>Assigns assets to users.</description></docblock>
+  </interface>
 </project>
 XML);
 
@@ -119,8 +124,11 @@ XML);
     $html = $files->get($basePath.'/generated/index.html');
     $databaseHtml = $files->get($basePath.'/generated/database.html');
     $javascript = $files->get($basePath.'/generated/assets/index.js');
+    $css = $files->get($basePath.'/generated/assets/index.css');
     $code = json_decode($files->get($basePath.'/normalized/code.json'), true);
     $database = json_decode($files->get($basePath.'/normalized/database.json'), true);
+    $assetService = collect($code['classes'])->firstWhere('name', 'AssetService');
+    $assignsAssets = collect($code['classes'])->firstWhere('name', 'AssignsAssets');
 
     expect($html)->toContain(
         'href="api.html"',
@@ -145,13 +153,21 @@ XML);
             'aria-label="${esc(label)}"',
             'const list = value => Array.isArray(value) ? value : Object.values(value || {});',
             'list(tableInfo.indexes).map',
+            'codeSidebarSwitcher',
+            'setCodeGroupBy(\'types\')',
+            'typeGroup(type.type)',
+            "interface:'Interfaces'",
         )
         ->not->toContain(
             "groupType:'table'",
             "table:'T'",
         )
-        ->and($code['classes'][0]['name'])->toBe('AssetService')
-        ->and($code['classes'][0]['methods'][0]['name'])->toBe('assign')
+        ->and($css)->toContain(
+            '.sidebar-switcher',
+            '.sidebar-switcher button.active',
+        )
+        ->and($assetService['methods'][0]['name'])->toBe('assign')
+        ->and($assignsAssets['type'])->toBe('interface')
         ->and($database['tables'])->sequence(
             fn ($table) => $table->name->toBe('assets'),
             fn ($table) => $table->name->toBe('categories'),

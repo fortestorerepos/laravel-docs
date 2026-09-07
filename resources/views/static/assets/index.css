@@ -10,6 +10,10 @@ header{height:58px;display:flex;align-items:center;justify-content:space-between
 .layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 58px)}
 aside{border-right:1px solid var(--line);background:var(--panel);padding:16px;overflow:auto}
 main{padding:24px;overflow:auto}
+.sidebar-switcher{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--soft);margin:0 0 12px}
+.sidebar-switcher button{border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font:inherit;font-size:12px;font-weight:750;padding:7px 8px}
+.sidebar-switcher button:last-child{border-right:0}
+.sidebar-switcher button.active{background:var(--panel);color:var(--accent-dark)}
 .group{margin-bottom:18px}
 .group h2{margin:0 0 8px;color:var(--muted);font-size:12px;text-transform:uppercase;font-weight:750}
 .namespace-group{border-bottom:1px solid var(--line);padding:6px 0}
