@@ -200,6 +200,12 @@ XML);
             'aria-label="${esc(label)}"',
             'const list = value => Array.isArray(value) ? value : Object.values(value || {});',
             'list(tableInfo.indexes).map',
+            "table(['Column','References'],list(tableInfo.foreign_keys).map",
+            'activateDatabaseReference',
+            'activateCodeReference',
+            'dbModelLink(tableInfo)',
+            'dbReferenceLink(k.references_table,k.references_column)',
+            "memberId('column', c.name)",
             'codeSidebarSwitcher',
             'setCodeGroupBy(\'types\')',
             'typeGroup(type.type)',
@@ -227,6 +233,7 @@ XML);
             '.sidebar-switcher button.active',
             '.code-page',
             '.on-page',
+            '.column-anchor',
             '.member-card',
         )
         ->and($assignMethod['line'])->toBe(22)

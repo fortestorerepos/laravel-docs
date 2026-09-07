@@ -195,6 +195,27 @@ XML);
 });
 
 it('reads database documentation from laravel schema metadata', function () {
+    $files = app(Filesystem::class);
+    $sourcePath = sys_get_temp_dir().'/laravel-docs-db-models-'.uniqid();
+
+    $files->ensureDirectoryExists($sourcePath.'/Models');
+    config()->set('laravel-docs.code.paths', [$sourcePath]);
+    $files->put($sourcePath.'/Models/Asset.php', <<<'PHP'
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * @property int $id
+ * @property string $serial_number Human-readable asset serial number.
+ */
+class Asset extends Model
+{
+}
+PHP);
+
     Schema::dropIfExists('assets');
     Schema::dropIfExists('users');
 
@@ -209,9 +230,23 @@ it('reads database documentation from laravel schema metadata', function () {
     });
 
     $normalized = app(LaravelSchemaAdapter::class)->generate();
+    $assetColumns = collect($normalized['tables'][0]['columns']);
 
     expect($normalized['tables'][0]['name'])->toBe('assets')
-        ->and($normalized['tables'][0]['columns'][1]['name'])->toBe('assigned_user_id')
+        ->and($normalized['tables'][0]['model'])->toBe('Asset')
+        ->and($normalized['tables'][0]['model_full_name'])->toBe('\App\Models\Asset')
+        ->and($normalized['tables'][0]['primary_keys'])->toBe(['id'])
+        ->and($assetColumns->firstWhere('name', 'id'))->toMatchArray([
+            'name' => 'id',
+            'primary' => true,
+            'model_type' => 'int',
+        ])
+        ->and($assetColumns->firstWhere('name', 'assigned_user_id')['name'])->toBe('assigned_user_id')
+        ->and($assetColumns->firstWhere('name', 'serial_number'))->toMatchArray([
+            'name' => 'serial_number',
+            'description' => 'Human-readable asset serial number.',
+            'model_type' => 'string',
+        ])
         ->and($normalized['relationships'][0])->toMatchArray([
             'from_table' => 'assets',
             'from_column' => 'assigned_user_id',

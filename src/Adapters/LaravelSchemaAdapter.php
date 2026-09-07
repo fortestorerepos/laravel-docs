@@ -6,10 +6,14 @@ namespace LaravelDocs\LaravelDocs\Adapters;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Builder;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class LaravelSchemaAdapter
 {
+    public function __construct(private readonly Filesystem $files) {}
+
     /**
      * @return array{tables: list<array<string, mixed>>, relationships: list<array<string, string>>}
      */
@@ -19,6 +23,7 @@ class LaravelSchemaAdapter
         $schema = $connection->getSchemaBuilder();
         $tables = [];
         $relationships = [];
+        $models = $this->modelsByTable();
 
         $tableNames = $this->tableNames($schema);
         sort($tableNames);
@@ -28,7 +33,9 @@ class LaravelSchemaAdapter
 
             $tables[] = [
                 'name' => $tableName,
-                'columns' => $this->columns($schema, $tableName),
+                'model' => $models[$tableName]['name'] ?? '',
+                'model_full_name' => $models[$tableName]['full_name'] ?? '',
+                'columns' => $this->columns($schema, $tableName, $models[$tableName]['properties'] ?? []),
                 'primary_keys' => $this->primaryKeys($schema, $tableName),
                 'foreign_keys' => $foreignKeys,
                 'indexes' => $this->indexes($schema, $tableName),
@@ -83,19 +90,22 @@ class LaravelSchemaAdapter
     }
 
     /**
-     * @return list<array{name: string, type: string, nullable: bool, default: string, primary: bool}>
+     * @param  array<string, array{type: string, description: string}>  $modelProperties
+     * @return list<array{name: string, type: string, nullable: bool, default: string, primary: bool, description: string, model_type: string}>
      */
-    private function columns(Builder $schema, string $tableName): array
+    private function columns(Builder $schema, string $tableName, array $modelProperties): array
     {
         $primaryKeys = $this->primaryKeys($schema, $tableName);
 
         return array_map(
             fn (array $column): array => [
                 'name' => $column['name'],
-                'type' => $column['type_name'],
-                'nullable' => $column['nullable'],
+                'type' => (string) $column['type_name'],
+                'nullable' => (bool) $column['nullable'],
                 'default' => $this->stringValue($column['default']),
                 'primary' => in_array($column['name'], $primaryKeys, true),
+                'description' => $this->stringValue($column['comment'] ?? '') ?: ($modelProperties[$column['name']]['description'] ?? ''),
+                'model_type' => $modelProperties[$column['name']]['type'] ?? '',
             ],
             $schema->getColumns($tableName),
         );
@@ -107,7 +117,7 @@ class LaravelSchemaAdapter
     private function primaryKeys(Builder $schema, string $tableName): array
     {
         foreach ($this->indexes($schema, $tableName) as $index) {
-            if ($index['type'] === 'primary') {
+            if ($index['type'] === 'primary' || strtolower($index['name']) === 'primary') {
                 return $index['columns'];
             }
         }
@@ -122,10 +132,10 @@ class LaravelSchemaAdapter
     {
         return array_map(
             fn (array $index): array => [
-                'name' => $index['name'],
-                'unique' => $index['unique'],
+                'name' => (string) $index['name'],
+                'unique' => (bool) $index['unique'],
                 'columns' => $index['columns'],
-                'type' => $index['type'],
+                'type' => (string) $index['type'],
             ],
             $schema->getIndexes($tableName),
         );
@@ -145,6 +155,85 @@ class LaravelSchemaAdapter
             ],
             $schema->getForeignKeys($tableName),
         );
+    }
+
+    /**
+     * @return array<string, array{name: string, full_name: string, properties: array<string, array{type: string, description: string}>}>
+     */
+    private function modelsByTable(): array
+    {
+        $models = [];
+
+        foreach (config('laravel-docs.code.paths', []) as $path) {
+            if (! is_string($path) || ! $this->files->isDirectory($path)) {
+                continue;
+            }
+
+            foreach ($this->files->allFiles($path) as $file) {
+                if ($file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $source = $this->files->get($file->getPathname());
+
+                if (! preg_match('/class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+extends\s+Model\b/', $source, $class)) {
+                    continue;
+                }
+
+                $table = $this->modelTableName($source, $class[1]);
+                $models[$table] = [
+                    'name' => $class[1],
+                    'full_name' => $this->modelFullName($source, $class[1]),
+                    'properties' => array_replace($models[$table]['properties'] ?? [], $this->modelPropertyDocs($source)),
+                ];
+            }
+        }
+
+        return $models;
+    }
+
+    private function modelFullName(string $source, string $class): string
+    {
+        if (preg_match('/^namespace\s+([^;]+);/m', $source, $match)) {
+            return '\\'.trim($match[1], '\\').'\\'.$class;
+        }
+
+        return '\\'.$class;
+    }
+
+    private function modelTableName(string $source, string $class): string
+    {
+        if (preg_match('/protected\s+\$table\s*=\s*[\'"]([^\'"]+)[\'"]\s*;/', $source, $match)) {
+            return $match[1];
+        }
+
+        return Str::snake(Str::pluralStudly($class));
+    }
+
+    /**
+     * @return array<string, array{type: string, description: string}>
+     */
+    private function modelPropertyDocs(string $source): array
+    {
+        preg_match_all('/^\s*\*\s*@property(?!-read)\s+(.+)$/m', $source, $matches, PREG_SET_ORDER);
+
+        $properties = [];
+
+        foreach ($matches as $match) {
+            $property = trim($match[1]);
+
+            if (! preg_match('/^(.+?)\s+\$([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(.*))?$/', $property, $parts)) {
+                continue;
+            }
+
+            $properties[$parts[2]] = [
+                'type' => trim($parts[1]),
+                // Only the human text after the property name is shown as the column description.
+                'description' => trim($parts[3] ?? ''),
+            ];
+        }
+
+        return $properties;
     }
 
     private function stringValue(mixed $value): string

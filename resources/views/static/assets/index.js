@@ -12,11 +12,28 @@ const sidebar = document.getElementById('sidebar');
 const content = document.getElementById('content');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const block = value => `<pre>${esc(JSON.stringify(value ?? {}, null, 2))}</pre>`;
-const table = (headers, rows) => rows.length ? `<table><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>';
+const cell = value => value && typeof value === 'object' && 'html' in value ? value.html : esc(value);
+const table = (headers, rows) => rows.length ? `<table><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(value=>`<td>${cell(value)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>';
 const list = value => Array.isArray(value) ? value : Object.values(value || {});
 const memberId = (kind, name) => `${kind}_${String(name || '').replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
 const basename = path => String(path || '').split(/[\\/]/).pop();
 function activate(index){state.selected=index;render();}
+function activateCodeReference(value){
+  const index = typeIndex(value);
+  if (index === null) return;
+  state.tab = 'code';
+  state.selected = index;
+  render();
+}
+function activateDatabaseReference(tableName, columnName){
+  const index = entriesFor('database').findIndex(entry => entry.item.name === tableName);
+  if (index === -1) return;
+  state.selected = index;
+  render();
+  const id = memberId('column', columnName);
+  window.location.hash = id;
+  setTimeout(() => document.getElementById(id)?.scrollIntoView({block:'start'}), 0);
+}
 function render(){renderSidebar();renderContent();}
 function renderSidebar(){
   const entries = entriesFor(state.tab);
@@ -58,7 +75,7 @@ function renderContent(){
 }
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
-  if (tab === 'database') return (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span><div class="muted">${(table.columns||[]).length} columns</div>`}));
+  if (tab === 'database') return (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}));
   return (docs.code.classes||[]).map(type => {
     const group = state.codeGroupBy === 'types' ? typeGroup(type.type) : type.namespace || 'Global';
     const groupType = state.codeGroupBy === 'types' ? type.type : 'namespace';
@@ -74,7 +91,20 @@ function apiDetail(endpoint){
   return `<h1>${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">${esc(endpoint.method)}</span> <span class="uri">${esc(endpoint.uri)}</span></p><p>${esc(endpoint.description || '')}</p><p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>${block(endpoint.parameters)}<h2>Request Body</h2>${block(endpoint.body)}<h2>Responses</h2>${block(endpoint.responses)}`;
 }
 function dbDetail(tableInfo){
-  return `<h1>${esc(tableInfo.name)}</h1><h2>Columns</h2>${table(['Name','Type','Nullable','Default','Primary'],list(tableInfo.columns).map(c=>[c.name,c.type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no']))}<h2>Primary Keys</h2>${table(['Column'],list(tableInfo.primary_keys).map(k=>[k]))}<h2>Foreign Keys</h2>${table(['Name','Column','References'],list(tableInfo.foreign_keys).map(k=>[k.name,k.column,`${k.references_table}.${k.references_column}`]))}<h2>Indexes</h2>${table(['Name','Unique','Columns'],list(tableInfo.indexes).map(i=>[i.name,i.unique?'yes':'no',list(i.columns).join(', ')]))}`;
+  return `<h1>${esc(tableInfo.name)}${tableInfo.model ? `: ${dbModelLink(tableInfo)}` : ''}</h1><h2>Columns</h2>${table(['Name','Type','Model Type','Nullable','Default','Primary','Description'],list(tableInfo.columns).map(c=>[{html:`<span id="${memberId('column', c.name)}" class="column-anchor mono">${esc(c.name)}</span>`},c.type,c.model_type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no',c.description]))}<h2>Primary Keys</h2>${table(['Column'],list(tableInfo.primary_keys).map(k=>[k]))}<h2>Foreign Keys</h2>${table(['Column','References'],list(tableInfo.foreign_keys).map(k=>[k.column,{html:dbReferenceLink(k.references_table,k.references_column)}]))}<h2>Indexes</h2>${table(['Name','Unique','Columns'],list(tableInfo.indexes).map(i=>[i.name,i.unique?'yes':'no',list(i.columns).join(', ')]))}`;
+}
+function dbModelLink(tableInfo){
+  if (typeIndex(tableInfo.model_full_name || tableInfo.model) === null) return `<span class="mono">${esc(tableInfo.model)}</span>`;
+
+  return `<a href="#" class="mono" onclick='activateCodeReference(${JSON.stringify(tableInfo.model_full_name || tableInfo.model)});return false;'>${esc(tableInfo.model)}</a>`;
+}
+function dbReferenceLink(tableName, columnName){
+  const label = `${tableName}.${columnName}`;
+  const index = entriesFor('database').findIndex(entry => entry.item.name === tableName);
+
+  if (index === -1) return `<span class="mono">${esc(label)}</span>`;
+
+  return `<a href="#${memberId('column', columnName)}" class="mono" onclick='activateDatabaseReference(${JSON.stringify(tableName)},${JSON.stringify(columnName)});return false;'>${esc(label)}</a>`;
 }
 function codeDetail(type){
   return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Cases', type.cases || [], 'case')}${enumDetails(type)}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;

@@ -28,6 +28,7 @@ main{padding:24px;overflow:auto}
 .line{display:flex;gap:8px;align-items:center;min-width:0}
 .method{font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#b42318;min-width:44px}
 .uri,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--code)}
+.column-anchor{scroll-margin-top:78px}
 .muted{color:var(--muted)}
 .detail{max-width:1180px}
 .type-row{display:flex;gap:10px;align-items:flex-start}
