@@ -87,11 +87,11 @@ function codeHeader(type){
   return `${breadcrumb}<div class="code-heading"><div>${typeBadge(type.type)}<h1>${esc(type.name)}</h1>${implementsText}</div><div class="source-link">${fileText}</div></div><div class="flags">${flag(type.type, typeLabel(type.type))}${type.final ? flag('final','Final') : ''}${type.abstract ? flag('abstract','Abstract') : ''}</div>${type.summary ? `<p class="lead">${esc(type.summary)}</p>` : ''}${type.description ? `<p>${esc(type.description)}</p>` : ''}<div id="source" class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${type.parent ? linkReference(type.parent) : 'None'}</span><strong>File</strong><span>${type.file ? `${esc(type.file)}${type.line ? `:${esc(type.line)}` : ''}` : 'Not available'}</span></div>`;
 }
 function codeToc(type){
-  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({name: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({name:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type})))}${tocBlock('Methods', list(type.methods).map(item => ({name:methodTocSignature(item), href:`#${memberId('method', item.name)}`, summary:item.summary})))}</div></section>`;
+  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({label: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({label:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type ? typeReference(item.type) : ''})))}${tocBlock('Methods', list(type.methods).map(item => ({label:methodTocName(item), href:`#${memberId('method', item.name)}`, detail:item.return_type ? typeReference(item.return_type) : '', summary:item.summary})))}</div></section>`;
 }
 function tocBlock(title, entries){
   if (!entries.length) return '';
-  return `<div><h3>${esc(title)}</h3>${entries.map(entry=>`<p><a href="${entry.href}" class="mono">${esc(entry.name)}</a>${entry.detail ? ` : <span class="mono">${esc(entry.detail)}</span>` : ''}</p>${entry.summary ? `<p class="muted italic">${esc(entry.summary)}</p>` : ''}`).join('')}</div>`;
+  return `<div><h3>${esc(title)}</h3>${entries.map(entry=>`<p><a href="${entry.href}" class="mono">${esc(entry.label)}</a>${entry.detail ? ` : <span class="mono">${entry.detail}</span>` : ''}</p>${entry.summary ? `<p class="muted italic">${esc(entry.summary)}</p>` : ''}`).join('')}</div>`;
 }
 function memberSummary(title, entries, kind){
   entries = list(entries);
@@ -100,30 +100,30 @@ function memberSummary(title, entries, kind){
     return `<section id="interfaces"><h2>Interfaces</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge('interface')}<div><a href="#interfaces">${esc(shortReference(item))}</a></div></div>`).join('')}</div></section>`;
   }
 
-  return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div><a href="#${memberId(kind, item.name)}" class="mono">${esc(kind === 'method' ? methodSignature(item) : `$${item.name}${item.type ? ` : ${item.type}` : ''}`)}</a>${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
+  return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div>${kind === 'method' ? methodSummaryLink(item) : propertySummaryLink(item)}${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
 }
 function propertyDetails(type){
   const properties = list(type.properties);
   if (!properties.length) return '';
 
-  return `<section><h2>Properties</h2>${properties.map(property=>`<article class="member-card" id="${memberId('property', property.name)}"><div class="member-title"><h3>$${esc(property.name)}</h3><div>${visibility(property.visibility)}${property.static ? flag('static','Static') : ''}${property.read_only ? flag('read-only','Read-only') : ''}</div></div>${memberSource(type, property)}${property.summary ? `<p>${esc(property.summary)}</p>` : ''}${property.description ? `<p>${esc(property.description)}</p>` : ''}<pre>${esc(propertySignature(property))}</pre>${property.inherited_from ? `<p class="muted">Inherited from ${linkReference(property.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
+  return `<section><h2>Properties</h2>${properties.map(property=>`<article class="member-card" id="${memberId('property', property.name)}"><div class="member-title"><h3>$${esc(property.name)}</h3><div>${visibility(property.visibility)}${property.static ? flag('static','Static') : ''}${property.read_only ? flag('read-only','Read-only') : ''}</div></div>${memberSource(type, property)}${property.summary ? `<p>${esc(property.summary)}</p>` : ''}${property.description ? `<p>${esc(property.description)}</p>` : ''}<pre>${propertySignature(property)}</pre>${property.inherited_from ? `<p class="muted">Inherited from ${linkReference(property.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
 }
 function methodDetails(type){
   const methods = list(type.methods);
   if (!methods.length) return '';
 
-  return `<section><h2>Methods</h2>${methods.map(method=>`<article class="member-card" id="${memberId('method', method.name)}"><div class="member-title"><h3>${esc(method.name)}()</h3><div>${visibility(method.visibility)}${method.static ? flag('static','Static') : ''}${method.final ? flag('final','Final') : ''}${method.abstract ? flag('abstract','Abstract') : ''}</div></div>${memberSource(type, method)}<pre>${esc(methodSignature(method))}</pre>${method.summary ? `<p>${esc(method.summary)}</p>` : ''}${method.description ? `<p>${esc(method.description)}</p>` : ''}${parametersTable(method)}${returnBlock(method)}${method.inherited_from ? `<p class="muted">Inherited from ${linkReference(method.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
+  return `<section><h2>Methods</h2>${methods.map(method=>`<article class="member-card" id="${memberId('method', method.name)}"><div class="member-title"><h3>${esc(method.name)}()</h3><div>${visibility(method.visibility)}${method.static ? flag('static','Static') : ''}${method.final ? flag('final','Final') : ''}${method.abstract ? flag('abstract','Abstract') : ''}</div></div>${memberSource(type, method)}<pre>${methodSignature(method)}</pre>${method.summary ? `<p>${esc(method.summary)}</p>` : ''}${method.description ? `<p>${esc(method.description)}</p>` : ''}${parametersTable(method)}${returnBlock(method)}${method.inherited_from ? `<p class="muted">Inherited from ${linkReference(method.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
 }
 function parametersTable(method){
   const parameters = list(method.parameters);
   if (!parameters.length) return '';
 
-  return `<h4>Parameters</h4>${table(['Name','Type','Default','Description'], parameters.map(parameter=>[`$${parameter.name}`, parameter.type, parameter.default, parameter.description]))}`;
+  return `<h4>Parameters</h4><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>${parameters.map(parameter=>`<tr><td>$${esc(parameter.name)}</td><td>${typeReference(parameter.type)}</td><td>${esc(parameter.default)}</td><td>${esc(parameter.description)}</td></tr>`).join('')}</tbody></table>`;
 }
 function returnBlock(method){
   if (!method.return_type && !method.return_description) return '';
 
-  return `<h4>Return values</h4><p>${method.return_type ? `<span class="mono">${esc(method.return_type)}</span>` : ''}${method.return_description ? ` ${esc(method.return_description)}` : ''}</p>`;
+  return `<h4>Return values</h4><p>${method.return_type ? `<span class="mono">${typeReference(method.return_type)}</span>` : ''}${method.return_description ? ` ${esc(method.return_description)}` : ''}</p>`;
 }
 function memberSource(type, member){
   if (!type.file && !member.line) return '';
@@ -153,17 +153,36 @@ function typeIndex(value){
 }
 function shortReference(value){const parts = String(value || '').replace(/^\\+/, '').split('\\'); return parts.pop() || value || '';}
 function propertySignature(property){
-  return `${[property.visibility, property.static ? 'static' : '', property.type].filter(Boolean).join(' ')} $${property.name}${property.default ? ` = ${property.default}` : ''}`;
+  return `${esc([property.visibility, property.static ? 'static' : ''].filter(Boolean).join(' '))}${property.visibility || property.static ? ' ' : ''}${property.type ? `${typeReference(property.type)} ` : ''}$${esc(property.name)}${property.default ? ` = ${esc(property.default)}` : ''}`;
 }
-function methodTocSignature(method){
-  const params = (method.parameters||[]).map(p => `$${p.name || 'parameter'}`).join(', ');
+function propertySummaryLink(property){
+  return `<a href="#${memberId('property', property.name)}" class="mono">$${esc(property.name)}</a>${property.type ? ` : <span class="mono">${typeReference(property.type)}</span>` : ''}`;
+}
+function methodTocName(method){
+  const params = (method.parameters||[]).map(p => `$${esc(p.name || 'parameter')}`).join(', ');
 
-  return `${method.name || 'method'}(${params})${method.return_type ? `: ${method.return_type}` : ''}`;
+  return `${method.name || 'method'}(${params})`;
+}
+function methodSummaryLink(method){
+  return `<a href="#${memberId('method', method.name)}" class="mono">${esc(methodTocName(method))}</a>${method.return_type ? ` : <span class="mono">${typeReference(method.return_type)}</span>` : ''}`;
 }
 function methodSignature(method){
-  const params = (method.parameters||[]).map(p => `${p.type ? p.type + ' ' : ''}$${p.name || 'parameter'}${p.default ? ' = ' + p.default : ''}`).join(', ');
+  const params = (method.parameters||[]).map(p => `${p.type ? typeReference(p.type) + ' ' : ''}$${esc(p.name || 'parameter')}${p.default ? ' = ' + esc(p.default) : ''}`).join(', ');
   const prefix = [method.visibility, method.static ? 'static' : ''].filter(Boolean).join(' ');
 
-  return `${prefix ? `${prefix} ` : ''}${method.name || 'method'}(${params})${method.return_type ? ': ' + method.return_type : ''}`;
+  return `${prefix ? `${esc(prefix)} ` : ''}${esc(method.name || 'method')}(${params})${method.return_type ? ': ' + typeReference(method.return_type) : ''}`;
+}
+function typeReference(type){
+  return String(type || '').split(/(\\?[A-Z_][\\A-Za-z0-9_]*)/g).map(part => {
+    if (!part) return '';
+
+    const normalized = part.replace(/^\\+/, '');
+    const builtIns = ['array', 'bool', 'callable', 'false', 'float', 'int', 'iterable', 'mixed', 'never', 'null', 'object', 'self', 'static', 'string', 'true', 'void'];
+
+    if (builtIns.includes(normalized.toLowerCase())) return esc(part);
+    if (!part.includes('\\') && typeIndex(part) === null) return esc(part);
+
+    return linkReference(part);
+  }).join('');
 }
 render();
