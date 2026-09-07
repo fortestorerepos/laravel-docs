@@ -13,14 +13,14 @@ Use this skill when a Laravel application needs to generate a standalone documen
 
 ## Primary Goal
 
-- configure `laravel-docs` as a development-time orchestrator for phpDocumentor, Scribe, and SchemaSpy
+- configure `fab-magalhaes/laravel-docs` as a development-time orchestrator for phpDocumentor, Scribe, and Laravel schema metadata
 
 ## Workflow
 
 ### 1. Confirm the Laravel app context
 
 - confirm the target project is a Laravel application
-- inspect whether Scribe, phpDocumentor, and SchemaSpy are installed or intentionally disabled
+- inspect `config/database.php` when database documentation should use a non-default connection
 - inspect `config/laravel-docs.php` when present
 
 ### 2. Install and publish configuration
@@ -30,6 +30,9 @@ Install the package as a development dependency:
 ```bash
 composer require --dev fab-magalhaes/laravel-docs
 ```
+
+Scribe is installed with Laravel Docs. Laravel Docs forces Scribe's generated output and intermediate cache into `storage/app/laravel-docs`.
+Laravel Docs first looks for `phpdoc`, then downloads the official phpDocumentor PHAR automatically when needed.
 
 Publish the config:
 
@@ -42,12 +45,13 @@ php artisan vendor:publish --tag=laravel-docs-config
 Use `config/laravel-docs.php` to set:
 
 - `sections.api`, `sections.database`, and `sections.code`
-- `code.executable` and `code.paths`
+- `api.scribe_dir` and `api.generated_path`
+- `code.executable`, `code.auto_download_phar`, `code.phar_url`, `code.phar_path`, `code.cache_path`, and `code.paths`
 - `api.generated_path` when Scribe writes structured output outside `public/docs`
-- `database.java_executable`, `database.schemaspy_jar`, and `database.arguments`
+- `database.connection` when database docs should use a named Laravel connection
 - output paths under `storage/app/laravel-docs`
 
-Disable any section whose external tool is not installed yet.
+Disable database docs when the app database is not reachable.
 
 ### 4. Generate the static site
 
@@ -76,7 +80,7 @@ Read before executing:
 
 ## Examples
 
-- Disable database docs while SchemaSpy is not configured:
+- Disable database docs while the database connection is not available:
 
 ```php
 'sections' => [
@@ -94,7 +98,8 @@ php artisan docs:generate --skip-tools
 
 ## Anti-patterns
 
-- do not use Laravel Docs as a replacement parser for phpDocumentor, Scribe, or SchemaSpy
+- do not use Laravel Docs as a replacement parser for phpDocumentor or Scribe
 - do not require a web route, queue, Redis, database table, or authentication to view generated docs
 - do not point consumers at raw generated HTML from upstream tools
+- do not leave Scribe intermediate files or phpDocumentor cache in the application root
 - do not document package internals as part of the consuming app API

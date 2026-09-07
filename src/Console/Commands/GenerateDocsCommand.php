@@ -6,13 +6,12 @@ namespace LaravelDocs\LaravelDocs\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
+use LaravelDocs\LaravelDocs\Adapters\LaravelSchemaAdapter;
 use LaravelDocs\LaravelDocs\Adapters\PhpDocumentorAdapter;
-use LaravelDocs\LaravelDocs\Adapters\SchemaSpyAdapter;
 use LaravelDocs\LaravelDocs\Adapters\ScribeAdapter;
 use LaravelDocs\LaravelDocs\Generators\StaticSiteGenerator;
 use LaravelDocs\LaravelDocs\Normalizers\ApiNormalizer;
 use LaravelDocs\LaravelDocs\Normalizers\CodeNormalizer;
-use LaravelDocs\LaravelDocs\Normalizers\DatabaseNormalizer;
 use Throwable;
 
 class GenerateDocsCommand extends Command
@@ -25,10 +24,9 @@ class GenerateDocsCommand extends Command
         Filesystem $files,
         PhpDocumentorAdapter $phpDocumentor,
         ScribeAdapter $scribe,
-        SchemaSpyAdapter $schemaSpy,
+        LaravelSchemaAdapter $laravelSchema,
         CodeNormalizer $codeNormalizer,
         ApiNormalizer $apiNormalizer,
-        DatabaseNormalizer $databaseNormalizer,
         StaticSiteGenerator $siteGenerator,
     ): int {
         $basePath = (string) config('laravel-docs.base_path');
@@ -42,14 +40,14 @@ class GenerateDocsCommand extends Command
 
         try {
             if (! $this->option('skip-tools')) {
-                $this->runEnabledTools($phpDocumentor, $scribe, $schemaSpy);
+                $this->runEnabledTools($phpDocumentor, $scribe);
             }
 
             $this->line('Normalizing documentation data...');
 
             $normalized = [
                 'api' => $this->sectionEnabled('api') ? $apiNormalizer->normalize($rawPath.'/scribe') : ['groups' => []],
-                'database' => $this->sectionEnabled('database') ? $databaseNormalizer->normalize($rawPath.'/schemaspy') : ['tables' => [], 'relationships' => []],
+                'database' => $this->sectionEnabled('database') ? $laravelSchema->generate() : ['tables' => [], 'relationships' => []],
                 'code' => $this->sectionEnabled('code') ? $codeNormalizer->normalize($rawPath.'/phpdocumentor') : ['namespaces' => [], 'classes' => []],
             ];
 
@@ -77,7 +75,6 @@ class GenerateDocsCommand extends Command
     private function runEnabledTools(
         PhpDocumentorAdapter $phpDocumentor,
         ScribeAdapter $scribe,
-        SchemaSpyAdapter $schemaSpy,
     ): void {
         if ($this->sectionEnabled('code')) {
             $this->line('Generating PHP code documentation with phpDocumentor...');
@@ -90,8 +87,7 @@ class GenerateDocsCommand extends Command
         }
 
         if ($this->sectionEnabled('database')) {
-            $this->line('Generating database documentation with SchemaSpy...');
-            $schemaSpy->generate();
+            $this->line('Reading database documentation from Laravel schema metadata...');
         }
     }
 

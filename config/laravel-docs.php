@@ -21,17 +21,20 @@ return [
     ],
 
     'api' => [
-        'generated_path' => public_path('docs'),
+        'scribe_dir' => storage_path('app/laravel-docs/cache/scribe'),
+        'generated_path' => storage_path('app/laravel-docs/raw/scribe'),
     ],
 
     'database' => [
-        'java_executable' => 'java',
-        'schemaspy_jar' => null,
-        'arguments' => [],
+        'connection' => null,
     ],
 
     'code' => [
         'executable' => 'phpdoc',
+        'auto_download_phar' => true,
+        'phar_url' => 'https://phpdoc.org/phpDocumentor.phar',
+        'phar_path' => storage_path('app/laravel-docs/bin/phpDocumentor.phar'),
+        'cache_path' => storage_path('app/laravel-docs/cache/phpdocumentor'),
         'paths' => [
             app_path(),
         ],

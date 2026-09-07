@@ -18,17 +18,21 @@
     ],
     "require": {
         "php": "^8.3",
-        "illuminate/support": "^12.0||^13.0"
+        "illuminate/support": "^12.0||^13.0",
+        "knuckleswtf/scribe": "^5.11"
     },
     "require-dev": {
         "larastan/larastan": "^3.9",
-        "laravel/pint": "^1.29",
         "laravel/pao": "^1.0",
+        "laravel/pint": "^1.29",
         "orchestra/testbench": "^10.0||^11.0",
         "pestphp/pest": "^4.6||^5.0",
         "pestphp/pest-plugin-laravel": "^4.1||^5.0",
         "pestphp/pest-plugin-type-coverage": "^4.0||^5.0",
         "phpstan/extension-installer": "^1.4"
+    },
+    "suggest": {
+        "phpdocumentor/phpdocumentor": "Optional Composer install for PHP code docs, but Laravel Docs can download the official PHAR automatically."
     },
     "autoload": {
         "psr-4": {

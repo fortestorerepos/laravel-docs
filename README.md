@@ -9,7 +9,7 @@ The first supported sources are:
 
 - phpDocumentor for PHP code documentation
 - Scribe for API documentation
-- SchemaSpy for database documentation
+- Laravel schema metadata for database documentation
 
 Laravel Docs does not replace these tools or parse Laravel projects from scratch.
 
@@ -27,9 +27,14 @@ Publish the configuration file:
 php artisan vendor:publish --tag=laravel-docs-config
 ```
 
+Scribe is installed with Laravel Docs. Laravel Docs forces Scribe's generated output and intermediate cache into `storage/app/laravel-docs`.
+For PHP code docs, Laravel Docs first looks for `phpdoc`, then downloads the official phpDocumentor PHAR automatically when needed.
+
+Database docs use Laravel's configured database connection and schema metadata.
+
 ## Configuration
 
-The published `config/laravel-docs.php` file controls output paths, enabled sections, and external tool locations.
+The published `config/laravel-docs.php` file controls output paths, enabled sections, and tool locations.
 
 ```php
 return [
@@ -43,15 +48,27 @@ return [
 
     'code' => [
         'executable' => 'phpdoc',
+        'auto_download_phar' => true,
+        'phar_url' => 'https://phpdoc.org/phpDocumentor.phar',
+        'phar_path' => storage_path('app/laravel-docs/bin/phpDocumentor.phar'),
+        'cache_path' => storage_path('app/laravel-docs/cache/phpdocumentor'),
         'paths' => [
             app_path(),
         ],
     ],
+
+    'api' => [
+        'scribe_dir' => storage_path('app/laravel-docs/cache/scribe'),
+        'generated_path' => storage_path('app/laravel-docs/raw/scribe'),
+    ],
+
+    'database' => [
+        'connection' => null,
+    ],
 ];
 ```
 
-Configure `laravel-docs.database.schemaspy_jar` before enabling SchemaSpy generation.
-Scribe must be installed in the host application for the API section.
+Set `laravel-docs.database.connection` to a named Laravel database connection when you do not want to use the default connection.
 
 ## Usage
 
@@ -87,8 +104,10 @@ php artisan docs:generate --skip-tools
 storage/app/laravel-docs/
 |-- raw/
 |   |-- phpdocumentor/
-|   |-- scribe/
-|   `-- schemaspy/
+|   `-- scribe/
+|-- cache/
+|   |-- phpdocumentor/
+|   `-- scribe/
 |-- normalized/
 |   |-- api.json
 |   |-- database.json

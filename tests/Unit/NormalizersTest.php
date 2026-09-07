@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Schema;
+use LaravelDocs\LaravelDocs\Adapters\LaravelSchemaAdapter;
 use LaravelDocs\LaravelDocs\Normalizers\ApiNormalizer;
-use LaravelDocs\LaravelDocs\Normalizers\DatabaseNormalizer;
+use LaravelDocs\LaravelDocs\Normalizers\CodeNormalizer;
 
 it('normalizes openapi groups from tags', function () {
     $files = app(Filesystem::class);
@@ -30,22 +32,58 @@ it('normalizes openapi groups from tags', function () {
         ->and($normalized['groups'][0]['endpoints'][0]['uri'])->toBe('/api/users');
 });
 
-it('normalizes schemaspy table relationships', function () {
+it('normalizes phpdocumentor child element names and return tags', function () {
     $files = app(Filesystem::class);
-    $path = sys_get_temp_dir().'/laravel-docs-db-'.uniqid();
+    $path = sys_get_temp_dir().'/laravel-docs-code-'.uniqid();
     $files->ensureDirectoryExists($path);
-    $files->put($path.'/database.xml', <<<'XML'
-<database>
-  <table name="assets">
-    <column name="id" type="bigint" nullable="false" primaryKey="true" />
-    <foreignKey column="assigned_user_id" referencesTable="users" referencesColumn="id" />
-  </table>
-</database>
+    $files->put($path.'/structure.xml', <<<'XML'
+<project>
+  <class namespace="\App\Actions\Fortify">
+    <name>ResetUserPassword</name>
+    <full_name>\App\Actions\Fortify\ResetUserPassword</full_name>
+    <implements>\Laravel\Fortify\Contracts\ResetsUserPasswords</implements>
+    <method visibility="public">
+      <name>reset</name>
+      <argument><name>user</name><type>\App\Models\User</type></argument>
+      <argument><name>input</name><type>array&lt;string,string&gt;</type></argument>
+      <docblock>
+        <description>Validate and reset the user's forgotten password.</description>
+        <tag name="return" type="void" />
+      </docblock>
+    </method>
+  </class>
+</project>
 XML);
 
-    $normalized = app(DatabaseNormalizer::class)->normalize($path);
+    $normalized = app(CodeNormalizer::class)->normalize($path);
+
+    expect($normalized['classes'][0]['name'])->toBe('ResetUserPassword')
+        ->and($normalized['classes'][0]['methods'][0]['name'])->toBe('reset')
+        ->and($normalized['classes'][0]['methods'][0]['parameters'][0])->toMatchArray([
+            'name' => 'user',
+            'type' => '\App\Models\User',
+        ])
+        ->and($normalized['classes'][0]['methods'][0]['return_type'])->toBe('void');
+});
+
+it('reads database documentation from laravel schema metadata', function () {
+    Schema::dropIfExists('assets');
+    Schema::dropIfExists('users');
+
+    Schema::create('users', function ($table) {
+        $table->id();
+    });
+
+    Schema::create('assets', function ($table) {
+        $table->id();
+        $table->foreignId('assigned_user_id')->constrained('users');
+        $table->string('serial_number')->unique();
+    });
+
+    $normalized = app(LaravelSchemaAdapter::class)->generate();
 
     expect($normalized['tables'][0]['name'])->toBe('assets')
+        ->and($normalized['tables'][0]['columns'][1]['name'])->toBe('assigned_user_id')
         ->and($normalized['relationships'][0])->toMatchArray([
             'from_table' => 'assets',
             'from_column' => 'assigned_user_id',

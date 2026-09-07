@@ -25,10 +25,16 @@ class ScribeAdapter
         }
 
         $outputPath = (string) config('laravel-docs.raw_path').'/scribe';
+        $scribeDir = (string) config('laravel-docs.api.scribe_dir', storage_path('app/laravel-docs/cache/scribe'));
         $this->files->ensureDirectoryExists($outputPath);
+        $this->files->ensureDirectoryExists($scribeDir);
+
+        $this->configureScribeOutput($outputPath);
 
         $exitCode = $this->artisan->call('scribe:generate', [
+            '--force' => true,
             '--no-interaction' => true,
+            '--scribe-dir' => $scribeDir,
         ]);
 
         if ($exitCode !== 0) {
@@ -37,8 +43,22 @@ class ScribeAdapter
 
         $configuredSource = config('laravel-docs.api.generated_path');
 
-        if (is_string($configuredSource) && $configuredSource !== '' && $this->files->isDirectory($configuredSource)) {
+        if (
+            is_string($configuredSource)
+            && $configuredSource !== ''
+            && realpath($configuredSource) !== realpath($outputPath)
+            && $this->files->isDirectory($configuredSource)
+        ) {
             $this->files->copyDirectory($configuredSource, $outputPath);
         }
+    }
+
+    private function configureScribeOutput(string $outputPath): void
+    {
+        config()->set('scribe.type', 'static');
+        config()->set('scribe.static.output_path', $outputPath);
+        config()->set('scribe.postman.enabled', true);
+        config()->set('scribe.openapi.enabled', true);
+        config()->set('scribe.laravel.add_routes', false);
     }
 }

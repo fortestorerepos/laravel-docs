@@ -51,8 +51,8 @@ class CodeNormalizer
      */
     private function normalizeType(SimpleXMLElement $node, string $type): array
     {
-        $name = $this->attribute($node, 'name');
-        $fqsen = $this->attribute($node, 'fqsen') ?: $this->attribute($node, 'full_name');
+        $name = $this->value($node, 'name');
+        $fqsen = $this->value($node, 'fqsen') ?: $this->value($node, 'full_name');
 
         return [
             'name' => $this->shortName($name, $fqsen),
@@ -79,10 +79,10 @@ class CodeNormalizer
             }
 
             $methods[] = [
-                'name' => $this->attribute($method, 'name'),
+                'name' => $this->value($method, 'name'),
                 'summary' => trim((string) ($method->docblock->description ?? $method->description ?? $method->summary ?? '')),
                 'parameters' => $this->parameters($method),
-                'return_type' => $this->attribute($method, 'return') ?: $this->textFromFirst($method, ['return', 'response', 'type']),
+                'return_type' => $this->returnType($method),
             ];
         }
 
@@ -98,9 +98,9 @@ class CodeNormalizer
 
         foreach ($method->xpath('.//argument|.//parameter|.//param') ?: [] as $parameter) {
             $parameters[] = [
-                'name' => ltrim($this->attribute($parameter, 'name'), '$'),
-                'type' => $this->attribute($parameter, 'type') ?: $this->textFromFirst($parameter, ['type']),
-                'default' => $this->attribute($parameter, 'default'),
+                'name' => ltrim($this->value($parameter, 'name') ?: $this->attribute($parameter, 'variable'), '$'),
+                'type' => $this->value($parameter, 'type'),
+                'default' => $this->value($parameter, 'default'),
             ];
         }
 
@@ -120,8 +120,8 @@ class CodeNormalizer
             }
 
             $properties[] = [
-                'name' => $this->attribute($property, 'name'),
-                'type' => $this->attribute($property, 'type') ?: $this->textFromFirst($property, ['type']),
+                'name' => $this->value($property, 'name'),
+                'type' => $this->value($property, 'type'),
                 'summary' => trim((string) ($property->docblock->description ?? $property->description ?? $property->summary ?? '')),
             ];
         }
@@ -155,6 +155,30 @@ class CodeNormalizer
         return trim((string) ($node->attributes()[$attribute] ?? ''));
     }
 
+    private function value(SimpleXMLElement $node, string $name): string
+    {
+        return $this->attribute($node, $name) ?: trim((string) ($node->{$name} ?? ''));
+    }
+
+    private function returnType(SimpleXMLElement $method): string
+    {
+        $return = $this->attribute($method, 'return') ?: $this->textFromDirectChild($method, 'return');
+
+        if ($return !== '') {
+            return $return;
+        }
+
+        foreach ($method->xpath('./docblock/tag[@name="return"]') ?: [] as $tag) {
+            $type = $this->attribute($tag, 'type');
+
+            if ($type !== '') {
+                return $type;
+            }
+        }
+
+        return '';
+    }
+
     /**
      * @param  list<string>  $names
      */
@@ -169,6 +193,11 @@ class CodeNormalizer
         }
 
         return '';
+    }
+
+    private function textFromDirectChild(SimpleXMLElement $node, string $name): string
+    {
+        return trim((string) ($node->{$name} ?? ''));
     }
 
     /**

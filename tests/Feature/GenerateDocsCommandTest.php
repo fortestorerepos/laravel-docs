@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Schema;
 use LaravelDocs\LaravelDocs\LaravelDocs;
 
 it('resolves the singleton', function () {
@@ -30,16 +31,21 @@ it('generates normalized json and a static html site from existing raw outputs',
 
     $files->ensureDirectoryExists($basePath.'/raw/phpdocumentor');
     $files->ensureDirectoryExists($basePath.'/raw/scribe');
-    $files->ensureDirectoryExists($basePath.'/raw/schemaspy');
 
     $files->put($basePath.'/raw/phpdocumentor/structure.xml', <<<'XML'
 <project>
-  <class name="App\Services\AssetService" namespace="App\Services">
-    <description>Handles asset operations.</description>
-    <method name="assign" visibility="public" return="App\Models\AssetAssignment">
-      <description>Assigns an asset to a user.</description>
-      <argument name="user" type="App\Models\User" />
-      <argument name="asset" type="App\Models\Asset" />
+  <class namespace="\App\Services">
+    <name>AssetService</name>
+    <full_name>\App\Services\AssetService</full_name>
+    <docblock><description>Handles asset operations.</description></docblock>
+    <method visibility="public">
+      <name>assign</name>
+      <argument><name>user</name><type>App\Models\User</type></argument>
+      <argument><name>asset</name><type>App\Models\Asset</type></argument>
+      <docblock>
+        <description>Assigns an asset to a user.</description>
+        <tag name="return" type="App\Models\AssetAssignment" />
+      </docblock>
     </method>
   </class>
 </project>
@@ -65,16 +71,18 @@ XML);
         ],
     ]));
 
-    $files->put($basePath.'/raw/schemaspy/database.xml', <<<'XML'
-<database>
-  <table name="assets">
-    <column name="id" type="bigint" nullable="false" primaryKey="true" />
-    <column name="category_id" type="bigint" nullable="true" />
-    <foreignKey name="assets_category_id_foreign" column="category_id" referencesTable="categories" referencesColumn="id" />
-    <index name="assets_category_id_index" unique="false"><column name="category_id" /></index>
-  </table>
-</database>
-XML);
+    Schema::dropIfExists('assets');
+    Schema::dropIfExists('categories');
+
+    Schema::create('categories', function ($table) {
+        $table->id();
+    });
+
+    Schema::create('assets', function ($table) {
+        $table->id();
+        $table->foreignId('category_id')->nullable()->constrained();
+        $table->string('serial_number')->index();
+    });
 
     $this->artisan('docs:generate', ['--skip-tools' => true])
         ->expectsOutputToContain('Laravel documentation generated.')
@@ -87,8 +95,13 @@ XML);
 
     $html = $files->get($basePath.'/generated/index.html');
     $code = json_decode($files->get($basePath.'/normalized/code.json'), true);
+    $database = json_decode($files->get($basePath.'/normalized/database.json'), true);
 
     expect($html)->toContain('data-tab="api"', 'data-tab="database"', 'data-tab="code"')
         ->and($code['classes'][0]['name'])->toBe('AssetService')
-        ->and($code['classes'][0]['methods'][0]['name'])->toBe('assign');
+        ->and($code['classes'][0]['methods'][0]['name'])->toBe('assign')
+        ->and($database['tables'])->sequence(
+            fn ($table) => $table->name->toBe('assets'),
+            fn ($table) => $table->name->toBe('categories'),
+        );
 });

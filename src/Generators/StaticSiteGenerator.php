@@ -36,7 +36,7 @@ class StaticSiteGenerator
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Laravel Docs</title>
 <style>
-:root{color-scheme:light;--bg:#f7f8fa;--panel:#fff;--line:#d9dee7;--text:#18202f;--muted:#667085;--accent:#b42318;--soft:#f2f4f7;--code:#344054}
+:root{color-scheme:light;--bg:#fbfcfb;--panel:#fff;--line:#dfe8dc;--text:#172b13;--muted:#667085;--accent:#73ce4b;--accent-dark:#2f6f1f;--soft:#f3f8f1;--code:#344054}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
@@ -44,7 +44,7 @@ header{height:58px;display:flex;align-items:center;justify-content:space-between
 .tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--soft)}
 .tabs button{min-width:68px;border:0;border-right:1px solid var(--line);background:transparent;padding:8px 14px;font:inherit;font-weight:650;color:var(--muted);cursor:pointer}
 .tabs button:last-child{border-right:0}
-.tabs button.active{background:var(--panel);color:var(--accent)}
+.tabs button.active{background:var(--panel);color:var(--accent-dark)}
 .layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 58px)}
 aside{border-right:1px solid var(--line);background:var(--panel);padding:16px;overflow:auto}
 main{padding:24px;overflow:auto}
@@ -53,10 +53,20 @@ main{padding:24px;overflow:auto}
 .item{width:100%;display:block;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--text);padding:8px 10px;cursor:pointer;overflow-wrap:anywhere}
 .item:hover,.item.active{background:var(--soft)}
 .line{display:flex;gap:8px;align-items:center;min-width:0}
-.method{font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);min-width:44px}
+.method{font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#b42318;min-width:44px}
 .uri,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--code)}
 .muted{color:var(--muted)}
 .detail{max-width:980px}
+.type-row{display:flex;gap:10px;align-items:flex-start}
+.type-badge{display:inline-grid;place-items:center;flex:0 0 auto;width:24px;height:24px;border-radius:999px;background:var(--accent);color:#fff;font:800 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+.toc-list{display:grid;gap:12px;margin:10px 0 28px}
+.toc-link{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start}
+.toc-link a{color:var(--accent-dark);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;font-size:16px}
+.toc-link p{font-style:italic;color:#344054}
+.meta-grid{display:grid;grid-template-columns:160px 1fr;gap:6px 16px;margin:16px 0 22px}
+.method-list{display:grid;gap:14px;margin-top:10px}
+.method-block{border-top:1px solid var(--line);padding-top:12px}
+.signature{font-size:15px;color:var(--text)}
 h1{font-size:28px;line-height:1.2;margin:0 0 8px}
 h2{font-size:16px;margin:24px 0 8px}
 h3{font-size:14px;margin:18px 0 6px}
@@ -111,8 +121,10 @@ function renderContent(){
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">\${esc(endpoint.method)}</span><span class="uri">\${esc(endpoint.uri)}</span></div><div class="muted">\${esc(endpoint.name||'Untitled endpoint')}</div>`})));
   if (tab === 'database') return (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">\${esc(table.name)}</span><div class="muted">\${(table.columns||[]).length} columns</div>`}));
-  return (docs.code.classes||[]).map(type => ({group:type.namespace||'Global',item:type,sidebar:`<span class="mono">\${esc(type.name)}</span><div class="muted">\${esc(type.type)}</div>`}));
+  return (docs.code.classes||[]).map(type => ({group:type.namespace||'Global',item:type,sidebar:`<div class="type-row"><span class="type-badge">\${typeIcon(type.type)}</span><span><span class="mono">\${esc(type.name)}</span><div class="muted">\${esc(typeLabel(type.type))}</div></span></div>`}));
 }
+function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace'}[type]||type||'Type');}
+function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N'}[type]||'C');}
 function apiDetail(endpoint){
   return `<h1>\${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">\${esc(endpoint.method)}</span> <span class="uri">\${esc(endpoint.uri)}</span></p><p>\${esc(endpoint.description || '')}</p><p class="muted">Controller: \${esc(endpoint.controller || 'Not available')} &middot; Auth: \${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>\${block(endpoint.parameters)}<h2>Request Body</h2>\${block(endpoint.body)}<h2>Responses</h2>\${block(endpoint.responses)}`;
 }
@@ -120,7 +132,15 @@ function dbDetail(tableInfo){
   return `<h1>\${esc(tableInfo.name)}</h1><h2>Columns</h2>\${table(['Name','Type','Nullable','Default','Primary'],(tableInfo.columns||[]).map(c=>[c.name,c.type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no']))}<h2>Primary Keys</h2>\${table(['Column'],(tableInfo.primary_keys||[]).map(k=>[k]))}<h2>Foreign Keys</h2>\${table(['Name','Column','References'],(tableInfo.foreign_keys||[]).map(k=>[k.name,k.column,`\${k.references_table}.\${k.references_column}`]))}<h2>Indexes</h2>\${table(['Name','Unique','Columns'],(tableInfo.indexes||[]).map(i=>[i.name,i.unique?'yes':'no',(i.columns||[]).join(', ')]))}`;
 }
 function codeDetail(type){
-  return `<h1>\${esc(type.name)}</h1><p class="muted">\${esc(type.type)} &middot; \${esc(type.namespace || 'Global namespace')}</p><p>\${esc(type.summary || '')}</p><h2>Inheritance</h2><p>Parent: \${esc(type.parent || 'None')}</p><p>Interfaces: \${esc((type.interfaces||[]).join(', ') || 'None')}</p><h2>Methods</h2>\${(type.methods||[]).length ? (type.methods||[]).map(method=>`<h3><span class="mono">\${esc(method.name)}(\${(method.parameters||[]).map(p=>esc((p.type? p.type+' ' : '') + '$' + p.name)).join(', ')})\${method.return_type ? ': ' + esc(method.return_type) : ''}</span></h3><p>\${esc(method.summary || '')}</p>`).join('') : '<p class="muted">No public methods found.</p>'}<h2>Properties</h2>\${table(['Name','Type','Description'],(type.properties||[]).map(p=>[p.name,p.type,p.summary]))}`;
+  return `<div class="type-row"><span class="type-badge">\${typeIcon(type.type)}</span><div><h1>\${esc(type.name)}</h1><p class="muted">\${typeLabel(type.type)} in <span class="mono">\${esc(type.namespace || 'Global namespace')}</span></p></div></div><p>\${esc(type.summary || '')}</p><div class="meta-grid"><strong>Namespace</strong><span class="mono">\${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>\${esc(type.parent || 'None')}</span><strong>Interfaces</strong><span>\${esc((type.interfaces||[]).join(', ') || 'None')}</span></div><h2>Methods</h2>\${methodList(type.methods||[])}<h2>Properties</h2>\${table(['Name','Type','Description'],(type.properties||[]).map(p=>[p.name,p.type,p.summary]))}`;
+}
+function methodList(methods){
+  if (!methods.length) return '<p class="muted">No public methods found.</p>';
+  return `<div class="method-list">\${methods.map(method=>`<div class="method-block"><div class="signature mono">\${esc(methodSignature(method))}</div><p>\${esc(method.summary || '')}</p></div>`).join('')}</div>`;
+}
+function methodSignature(method){
+  const params = (method.parameters||[]).map(p => `\${p.type ? p.type + ' ' : ''}$\${p.name || 'parameter'}\${p.default ? ' = ' + p.default : ''}`).join(', ');
+  return `\${method.name || 'method'}(\${params})\${method.return_type ? ': ' + method.return_type : ''}`;
 }
 window.addEventListener('hashchange',()=>{const tab=location.hash.replace('#','');if(['api','database','code'].includes(tab)){state.tab=tab;state.selected=0;render();}});
 render();
