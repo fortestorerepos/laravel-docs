@@ -3,6 +3,7 @@ const labels = {api:'API', database:'DB', code:'Code'};
 const externalDocs = docs._meta?.external_docs || {};
 const activeTab = document.body.dataset.activeTab || 'api';
 const themeToggle = document.getElementById('theme-toggle');
+const pdfButton = document.getElementById('pdf-download');
 let state = {
   codeGroupBy: localStorage.getItem('laravel-docs-code-group-by') || 'namespaces',
   theme: localStorage.getItem('laravel-docs-theme') || 'light',
@@ -32,6 +33,7 @@ function toggleTheme(){
   applyTheme();
 }
 themeToggle?.addEventListener('click', toggleTheme);
+pdfButton?.addEventListener('click', downloadPdf);
 applyTheme();
 function activateCodeReference(value){
   const index = typeIndex(value);
@@ -90,7 +92,7 @@ function renderContent(){
   if (!entries.length){content.innerHTML=`<div class="empty">Run docs:generate after configuring the ${labels[state.tab]} documentation source.</div>`;return;}
   const item = entries[Math.min(state.selected, entries.length - 1)].item;
   content.innerHTML = state.tab === 'api' ? apiDetail(item) : state.tab === 'database' ? dbContent(item) : codeDetail(item);
-  if (item.kind === 'database-relations-diagram') requestAnimationFrame(drawDatabaseDiagram);
+  if (item.kind === 'database-relations-diagram') requestAnimationFrame(() => drawDatabaseDiagram());
 }
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
@@ -134,7 +136,10 @@ function dbDetail(tableInfo){
 function dbRelationsDiagram(){
   const relationships = list(docs.database.relationships);
 
-  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p><div class="diagram-toolbar"><button type="button" onclick="setDiagramZoom(-0.1)">-</button><button type="button" onclick="setDiagramZoom(0)">Reset</button><button type="button" onclick="setDiagramZoom(0.1)">+</button></div><div class="diagram-shell"><canvas id="database-relations-canvas" width="1400" height="900"></canvas></div><h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p>${databaseDiagramMarkup('database-relations-canvas')}<h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+}
+function databaseDiagramMarkup(canvasId){
+  return `<div class="diagram-toolbar"><button type="button" onclick="setDiagramZoom(-0.1)">-</button><button type="button" onclick="setDiagramZoom(0)">Reset</button><button type="button" onclick="setDiagramZoom(0.1)">+</button></div><div class="diagram-shell"><canvas id="${esc(canvasId)}" width="1400" height="900"></canvas></div>`;
 }
 function dbConstraintsPage(){
   const constraints = list(docs.database.constraints);
@@ -183,8 +188,8 @@ function dbTableReferenceLink(tableName){
 
   return `<a href="#" class="mono" onclick="activate(${index});return false;">${esc(tableName)}</a>`;
 }
-function drawDatabaseDiagram(){
-  const canvas = document.getElementById('database-relations-canvas');
+function drawDatabaseDiagram(canvasId = 'database-relations-canvas'){
+  const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
   const tables = list(docs.database.tables);
@@ -221,6 +226,39 @@ function setDiagramZoom(delta){
   diagramView.scale = delta === 0 ? 1 : Math.min(1.8, Math.max(0.5, diagramView.scale + delta));
   localStorage.setItem('laravel-docs-database-diagram-scale', String(diagramView.scale));
   drawDatabaseDiagram();
+}
+function downloadPdf(){
+  const root = printRoot();
+  const originalTitle = document.title;
+
+  root.innerHTML = printContent();
+  document.title = `Laravel Docs - ${labels[state.tab]} Documentation`;
+  document.body.classList.add('printing');
+  if (state.tab === 'database') requestAnimationFrame(() => drawDatabaseDiagram('print-database-relations-canvas'));
+  window.addEventListener('afterprint', () => {
+    document.body.classList.remove('printing');
+    document.title = originalTitle;
+    root.innerHTML = '';
+  }, {once:true});
+  setTimeout(() => window.print(), state.tab === 'database' ? 100 : 0);
+}
+function printRoot(){
+  let root = document.getElementById('print-root');
+  if (!root) {
+    root = document.createElement('section');
+    root.id = 'print-root';
+    document.body.appendChild(root);
+  }
+
+  return root;
+}
+function printContent(){
+  if (state.tab === 'code') return `<div class="print-document"><h1>Code Documentation</h1>${list(docs.code.classes).map(codeDetail).join('')}</div>`;
+  if (state.tab === 'database') {
+    return `<div class="print-document"><h1>Database Documentation</h1><section>${dbRelationsDiagram().replace('database-relations-canvas', 'print-database-relations-canvas')}</section><section>${dbConstraintsPage()}</section>${list(docs.database.tables).map(tableInfo => `<section>${dbDetail(tableInfo)}</section>`).join('')}</div>`;
+  }
+
+  return `<div class="print-document"><h1>API Documentation</h1>${list(docs.api.groups).map(group => `<section><h2>${esc(group.name || 'Endpoints')}</h2>${list(group.endpoints).map(apiDetail).join('')}</section>`).join('')}</div>`;
 }
 function layoutDiagramTables(tables, relationships, options){
   const degree = new Map();

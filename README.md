@@ -132,6 +132,7 @@ storage/app/laravel-docs/
 
 The UI is a compact static HTML page with `API`, `DB`, and `Code` tabs in the header.
 Its source lives in package Blade views and assets under `resources/views/static`, so the generated frontend can be customized without editing PHP generator strings.
+The header also includes a Download PDF action that exports the currently opened section.
 
 ## Changelog
 

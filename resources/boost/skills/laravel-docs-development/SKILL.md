@@ -75,6 +75,7 @@ storage/app/laravel-docs/generated/index.html
 
 Use this only to view the final static site; it does not require a running Laravel application.
 The generated pages are rendered from package Blade views before they are written as static HTML. Section pages are available at `api.html`, `database.html`, and `code.html`, with shared `assets/index.css` and `assets/index.js`.
+Use the generated header's Download PDF button to export the currently opened section: API endpoints, database diagrams/tables/constraints, or PHP code documentation.
 
 ## Rules, References, and Templates
 
