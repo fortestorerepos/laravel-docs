@@ -63,6 +63,8 @@ class CodeNormalizer
     {
         $name = $this->value($node, 'name');
         $fqsen = $this->value($node, 'fqsen') ?: $this->value($node, 'full_name');
+        $source = $this->sourceMetadata($file);
+        $methods = $this->methods($node, $source);
 
         return [
             'name' => $this->shortName($name, $fqsen),
@@ -77,33 +79,37 @@ class CodeNormalizer
             'final' => $this->booleanAttribute($node, 'final'),
             'abstract' => $this->booleanAttribute($node, 'abstract'),
             'interfaces' => $this->valuesFrom($node, ['implements', 'interface']),
-            'methods' => $this->methods($node),
-            'properties' => $this->properties($node),
+            'methods' => $methods,
+            'properties' => $this->properties($node, $methods, $source),
         ];
     }
 
     /**
+     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}  $source
      * @return list<array<string, mixed>>
      */
-    private function methods(SimpleXMLElement $node): array
+    private function methods(SimpleXMLElement $node, array $source): array
     {
         $methods = [];
 
         foreach ($node->xpath('.//method') ?: [] as $method) {
+            $name = $this->value($method, 'name');
+            $line = $this->integerAttribute($method, 'line');
+
             $methods[] = [
-                'name' => $this->value($method, 'name'),
+                'name' => $name,
                 'full_name' => $this->value($method, 'full_name'),
                 'summary' => $this->summary($method),
                 'description' => $this->longDescription($method),
                 'visibility' => $this->attribute($method, 'visibility') ?: 'public',
-                'line' => $this->integerAttribute($method, 'line'),
+                'line' => $line,
                 'final' => $this->booleanAttribute($method, 'final'),
                 'abstract' => $this->booleanAttribute($method, 'abstract'),
                 'static' => $this->booleanAttribute($method, 'static'),
                 'return_by_reference' => $this->booleanAttribute($method, 'returnByReference'),
                 'inherited_from' => $this->textFromDirectChild($method, 'inherited_from'),
                 'parameters' => $this->parameters($method),
-                'return_type' => $this->returnType($method),
+                'return_type' => $this->returnType($method) ?: $this->sourceMethodReturnType($source, $name, $line),
                 'return_description' => $this->tagDescription($method, 'return'),
             ];
         }
@@ -135,17 +141,23 @@ class CodeNormalizer
     }
 
     /**
+     * @param  list<array<string, mixed>>  $methods
+     * @param  array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}  $source
      * @return list<array{name: string, type: string, summary: string}>
      */
-    private function properties(SimpleXMLElement $node): array
+    private function properties(SimpleXMLElement $node, array $methods, array $source): array
     {
         $properties = [];
 
         foreach ($node->xpath('.//property') ?: [] as $property) {
+            $name = $this->value($property, 'name');
+
             $properties[] = [
-                'name' => $this->value($property, 'name'),
+                'name' => $name,
                 'full_name' => $this->value($property, 'full_name'),
-                'type' => $this->value($property, 'type'),
+                'type' => $this->value($property, 'type')
+                    ?: $this->sourcePropertyType($source, $name, $this->integerAttribute($property, 'line'))
+                    ?: $this->promotedPropertyType($methods, $name, $this->integerAttribute($property, 'line')),
                 'summary' => $this->summary($property),
                 'description' => $this->longDescription($property),
                 'visibility' => $this->attribute($property, 'visibility') ?: 'public',
@@ -158,6 +170,160 @@ class CodeNormalizer
         }
 
         return $properties;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $methods
+     */
+    private function promotedPropertyType(array $methods, string $name, int $line): string
+    {
+        foreach ($methods as $method) {
+            if (($method['name'] ?? '') !== '__construct' || (int) ($method['line'] ?? 0) !== $line) {
+                continue;
+            }
+
+            foreach ($method['parameters'] ?? [] as $parameter) {
+                if (($parameter['name'] ?? '') === $name) {
+                    return (string) ($parameter['type'] ?? '');
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return array{imports: array<string, string>, method_returns: array<string, string>, property_types: array<string, string>}
+     */
+    private function sourceMetadata(string $file): array
+    {
+        $path = $this->sourceFile($file);
+
+        if ($path === null) {
+            return ['imports' => [], 'method_returns' => [], 'property_types' => []];
+        }
+
+        $source = $this->files->get($path);
+        $imports = $this->imports($source);
+
+        return [
+            'imports' => $imports,
+            'method_returns' => $this->sourceMethodReturns($source, $imports),
+            'property_types' => $this->sourcePropertyTypes($source, $imports),
+        ];
+    }
+
+    private function sourceFile(string $file): ?string
+    {
+        if ($file === '') {
+            return null;
+        }
+
+        foreach (config('laravel-docs.code.paths', []) as $path) {
+            $candidate = rtrim((string) $path, '/\\').DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $file);
+
+            if ($this->files->exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function imports(string $source): array
+    {
+        preg_match_all('/^use\s+(?!function\s|const\s)([^;]+);/mi', $source, $matches);
+
+        $imports = [];
+
+        foreach ($matches[1] as $use) {
+            $class = trim($use);
+            $parts = preg_split('/\s+as\s+/i', $class) ?: [$class];
+            $alias = isset($parts[1]) ? trim($parts[1]) : $this->shortName(trim($parts[0]), trim($parts[0]));
+
+            $imports[$alias] = '\\'.trim($parts[0], '\\');
+        }
+
+        return $imports;
+    }
+
+    /**
+     * @param  array<string, string>  $imports
+     * @return array<string, string>
+     */
+    private function sourceMethodReturns(string $source, array $imports): array
+    {
+        preg_match_all('/function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)\s*:\s*([^\s{;]+)/m', $source, $matches, PREG_SET_ORDER);
+
+        $returns = [];
+
+        foreach ($matches as $match) {
+            $returns[$match[1]] = $this->resolveImportedType($match[2], $imports);
+        }
+
+        return $returns;
+    }
+
+    /**
+     * @param  array<string, string>  $imports
+     * @return array<string, string>
+     */
+    private function sourcePropertyTypes(string $source, array $imports): array
+    {
+        preg_match_all('/(?:public|protected|private)\s+(?:readonly\s+)?(?:static\s+)?([?\\\\a-zA-Z_][\\\\a-zA-Z0-9_|&?]*)\s+\$([a-zA-Z_][a-zA-Z0-9_]*)/m', $source, $matches, PREG_SET_ORDER);
+
+        $types = [];
+
+        foreach ($matches as $match) {
+            $types[$match[2]] = $this->resolveImportedType($match[1], $imports);
+        }
+
+        return $types;
+    }
+
+    /**
+     * @param  array{method_returns: array<string, string>}  $source
+     */
+    private function sourceMethodReturnType(array $source, string $name, int $line): string
+    {
+        unset($line);
+
+        return $source['method_returns'][$name] ?? '';
+    }
+
+    /**
+     * @param  array{property_types: array<string, string>}  $source
+     */
+    private function sourcePropertyType(array $source, string $name, int $line): string
+    {
+        unset($line);
+
+        return $source['property_types'][$name] ?? '';
+    }
+
+    /**
+     * @param  array<string, string>  $imports
+     */
+    private function resolveImportedType(string $type, array $imports): string
+    {
+        if ($type === '') {
+            return '';
+        }
+
+        return preg_replace_callback('/\\\\?[a-zA-Z_][\\\\a-zA-Z0-9_]*/', function (array $match) use ($imports): string {
+            $value = $match[0];
+            $trimmed = ltrim($value, '\\');
+            $builtIns = ['array', 'bool', 'callable', 'false', 'float', 'int', 'iterable', 'mixed', 'never', 'null', 'object', 'self', 'static', 'string', 'true', 'void'];
+
+            if (in_array(strtolower($trimmed), $builtIns, true) || str_starts_with($value, '\\')) {
+                return $value;
+            }
+
+            return $imports[$trimmed] ?? $value;
+        }, $type) ?? $type;
     }
 
     private function firstXml(string $sourcePath): ?SimpleXMLElement

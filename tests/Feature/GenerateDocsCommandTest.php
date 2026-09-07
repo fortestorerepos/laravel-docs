@@ -57,6 +57,17 @@ it('generates normalized json and a static html site from existing raw outputs',
       <type>\App\Repositories\AssetRepository</type>
       <docblock><description>Stores assets.</description></docblock>
     </property>
+    <property namespace="\App\Services\AssetService" line="18" visibility="private">
+      <name>request</name>
+      <full_name>\App\Services\AssetService::$request</full_name>
+      <docblock><description></description></docblock>
+    </property>
+    <method visibility="public" static="false" final="false" line="18">
+      <name>__construct</name>
+      <full_name>\App\Services\AssetService::__construct()</full_name>
+      <argument line="18"><name>request</name><type>\Illuminate\Http\Request</type></argument>
+      <docblock><description></description></docblock>
+    </method>
     <method visibility="public" static="false" final="false" line="22">
       <name>assign</name>
       <full_name>\App\Services\AssetService::assign()</full_name>
@@ -140,6 +151,8 @@ XML);
     $database = json_decode($files->get($basePath.'/normalized/database.json'), true);
     $assetService = collect($code['classes'])->firstWhere('name', 'AssetService');
     $assignsAssets = collect($code['classes'])->firstWhere('name', 'AssignsAssets');
+    $assignMethod = collect($assetService['methods'])->firstWhere('name', 'assign');
+    $requestProperty = collect($assetService['properties'])->firstWhere('name', 'request');
 
     expect($html)->toContain(
         'href="api.html"',
@@ -172,6 +185,8 @@ XML);
             'codeToc',
             'propertyDetails',
             'methodDetails',
+            'methodTocSignature(item)',
+            'methodSignature(item)',
             'id="${memberId(\'method\', method.name)}"',
             'id="${memberId(\'property\', property.name)}"',
             'Return values',
@@ -187,11 +202,11 @@ XML);
             '.on-page',
             '.member-card',
         )
-        ->and($assetService['methods'][0]['name'])->toBe('assign')
-        ->and($assetService['methods'][0]['line'])->toBe(22)
-        ->and($assetService['methods'][0]['return_description'])->toBe('The created assignment.')
+        ->and($assignMethod['line'])->toBe(22)
+        ->and($assignMethod['return_description'])->toBe('The created assignment.')
         ->and($assetService['properties'][0]['visibility'])->toBe('private')
         ->and($assetService['properties'][0]['line'])->toBe(14)
+        ->and($requestProperty['type'])->toBe('\Illuminate\Http\Request')
         ->and($assetService['file'])->toBe('Services/AssetService.php')
         ->and($assetService['final'])->toBeTrue()
         ->and($assignsAssets['type'])->toBe('interface')

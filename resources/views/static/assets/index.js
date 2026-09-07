@@ -87,11 +87,11 @@ function codeHeader(type){
   return `${breadcrumb}<div class="code-heading"><div>${typeBadge(type.type)}<h1>${esc(type.name)}</h1>${implementsText}</div><div class="source-link">${fileText}</div></div><div class="flags">${flag(type.type, typeLabel(type.type))}${type.final ? flag('final','Final') : ''}${type.abstract ? flag('abstract','Abstract') : ''}</div>${type.summary ? `<p class="lead">${esc(type.summary)}</p>` : ''}${type.description ? `<p>${esc(type.description)}</p>` : ''}<div id="source" class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${type.parent ? linkReference(type.parent) : 'None'}</span><strong>File</strong><span>${type.file ? `${esc(type.file)}${type.line ? `:${esc(type.line)}` : ''}` : 'Not available'}</span></div>`;
 }
 function codeToc(type){
-  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({name: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({name:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type})))}${tocBlock('Methods', list(type.methods).map(item => ({name:`${item.name}()`, href:`#${memberId('method', item.name)}`, detail:item.return_type, summary:item.summary})))}</div></section>`;
+  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({name: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({name:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type})))}${tocBlock('Methods', list(type.methods).map(item => ({name:methodTocSignature(item), href:`#${memberId('method', item.name)}`, summary:item.summary})))}</div></section>`;
 }
 function tocBlock(title, entries){
   if (!entries.length) return '';
-  return `<div><h3>${esc(title)}</h3>${entries.map(entry=>`<p><a href="${entry.href}">${esc(entry.name)}</a>${entry.detail ? ` : <span class="mono">${esc(entry.detail)}</span>` : ''}</p>${entry.summary ? `<p class="muted italic">${esc(entry.summary)}</p>` : ''}`).join('')}</div>`;
+  return `<div><h3>${esc(title)}</h3>${entries.map(entry=>`<p><a href="${entry.href}" class="mono">${esc(entry.name)}</a>${entry.detail ? ` : <span class="mono">${esc(entry.detail)}</span>` : ''}</p>${entry.summary ? `<p class="muted italic">${esc(entry.summary)}</p>` : ''}`).join('')}</div>`;
 }
 function memberSummary(title, entries, kind){
   entries = list(entries);
@@ -100,7 +100,7 @@ function memberSummary(title, entries, kind){
     return `<section id="interfaces"><h2>Interfaces</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge('interface')}<div><a href="#interfaces">${esc(shortReference(item))}</a></div></div>`).join('')}</div></section>`;
   }
 
-  return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div><a href="#${memberId(kind, item.name)}">${kind === 'property' ? '$' : ''}${esc(item.name)}${kind === 'method' ? '()' : ''}</a>${item.type || item.return_type ? ` : <span class="mono">${esc(item.type || item.return_type)}</span>` : ''}${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
+  return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div><a href="#${memberId(kind, item.name)}" class="mono">${esc(kind === 'method' ? methodSignature(item) : `$${item.name}${item.type ? ` : ${item.type}` : ''}`)}</a>${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
 }
 function propertyDetails(type){
   const properties = list(type.properties);
@@ -154,6 +154,11 @@ function typeIndex(value){
 function shortReference(value){const parts = String(value || '').replace(/^\\+/, '').split('\\'); return parts.pop() || value || '';}
 function propertySignature(property){
   return `${[property.visibility, property.static ? 'static' : '', property.type].filter(Boolean).join(' ')} $${property.name}${property.default ? ` = ${property.default}` : ''}`;
+}
+function methodTocSignature(method){
+  const params = (method.parameters||[]).map(p => `$${p.name || 'parameter'}`).join(', ');
+
+  return `${method.name || 'method'}(${params})${method.return_type ? `: ${method.return_type}` : ''}`;
 }
 function methodSignature(method){
   const params = (method.parameters||[]).map(p => `${p.type ? p.type + ' ' : ''}$${p.name || 'parameter'}${p.default ? ' = ' + p.default : ''}`).join(', ');

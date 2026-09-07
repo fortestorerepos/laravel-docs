@@ -66,6 +66,62 @@ XML);
         ->and($normalized['classes'][0]['methods'][0]['return_type'])->toBe('void');
 });
 
+it('fills missing phpdocumentor member types from source imports', function () {
+    $files = app(Filesystem::class);
+    $basePath = sys_get_temp_dir().'/laravel-docs-code-source-'.uniqid();
+    $rawPath = $basePath.'/raw';
+    $sourcePath = $basePath.'/app';
+
+    $files->ensureDirectoryExists($rawPath);
+    $files->ensureDirectoryExists($sourcePath.'/Actions/Fortify');
+    config()->set('laravel-docs.code.paths', [$sourcePath]);
+
+    $files->put($sourcePath.'/Actions/Fortify/CreateNewUser.php', <<<'PHP'
+<?php
+
+namespace App\Actions\Fortify;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+
+class CreateNewUser
+{
+    public function __construct(private Request $request) {}
+
+    public function create(array $input): User {}
+}
+PHP);
+
+    $files->put($rawPath.'/structure.xml', <<<'XML'
+<project>
+  <file path="Actions/Fortify/CreateNewUser.php">
+    <class namespace="\App\Actions\Fortify" line="8">
+      <name>CreateNewUser</name>
+      <full_name>\App\Actions\Fortify\CreateNewUser</full_name>
+      <property namespace="\App\Actions\Fortify\CreateNewUser" line="10" visibility="private">
+        <name>request</name>
+        <full_name>\App\Actions\Fortify\CreateNewUser::$request</full_name>
+      </property>
+      <method visibility="public" line="10">
+        <name>__construct</name>
+        <argument line="10"><name>request</name></argument>
+      </method>
+      <method visibility="public" line="12">
+        <name>create</name>
+        <argument><name>input</name><type>array</type></argument>
+      </method>
+    </class>
+  </file>
+</project>
+XML);
+
+    $normalized = app(CodeNormalizer::class)->normalize($rawPath);
+    $type = $normalized['classes'][0];
+
+    expect($type['properties'][0]['type'])->toBe('\Illuminate\Http\Request')
+        ->and($type['methods'][1]['return_type'])->toBe('\App\Models\User');
+});
+
 it('reads database documentation from laravel schema metadata', function () {
     Schema::dropIfExists('assets');
     Schema::dropIfExists('users');
