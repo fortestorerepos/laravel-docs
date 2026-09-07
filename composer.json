@@ -1,13 +1,13 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "fab-magalhaes/laravel-docs",
+    "name": "fsrepos/laravel-docs-generator",
     "description": "",
     "keywords": [
         "laravel",
-        "fab-magalhaes",
+        "fsrepos",
         "laravel-docs"
     ],
-    "homepage": "https://github.com/fab-magalhaes/laravel-docs",
+    "homepage": "https://github.com/fsrepos/laravel-docs-generator",
     "license": "MIT",
     "authors": [
         {

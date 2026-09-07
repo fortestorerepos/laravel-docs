@@ -18,7 +18,7 @@ Laravel Docs does not replace these tools or parse Laravel projects from scratch
 Install the package via Composer:
 
 ```bash
-composer require --dev fab-magalhaes/laravel-docs
+composer require --dev fsrepos/laravel-docs-generator
 ```
 
 Publish the configuration file:

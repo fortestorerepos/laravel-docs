@@ -13,7 +13,7 @@ Use this skill when a Laravel application needs to generate a standalone documen
 
 ## Primary Goal
 
-- configure `fab-magalhaes/laravel-docs` as a development-time orchestrator for phpDocumentor, Scribe, and Laravel schema metadata
+- configure `fsrepos/laravel-docs-generator` as a development-time orchestrator for phpDocumentor, Scribe, and Laravel schema metadata
 
 ## Workflow
 
@@ -28,7 +28,7 @@ Use this skill when a Laravel application needs to generate a standalone documen
 Install the package as a development dependency:
 
 ```bash
-composer require --dev fab-magalhaes/laravel-docs
+composer require --dev fsrepos/laravel-docs-generator
 ```
 
 Scribe is installed with Laravel Docs. Laravel Docs forces Scribe's generated output and intermediate cache into `storage/app/laravel-docs`.
