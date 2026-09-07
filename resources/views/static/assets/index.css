@@ -25,12 +25,15 @@ main{padding:24px;overflow:auto}
 .namespace-items{display:grid;gap:2px;margin:4px 0 6px 22px}
 .item{width:100%;display:block;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--text);padding:8px 10px;cursor:pointer;overflow-wrap:anywhere}
 .item:hover,.item.active{background:var(--soft)}
+.top-item{margin:0 0 8px}
 .line{display:flex;gap:8px;align-items:center;min-width:0}
 .method{font:700 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#b42318;min-width:44px}
 .uri,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--code)}
 .column-anchor{scroll-margin-top:78px}
 .muted{color:var(--muted)}
 .detail{max-width:1180px}
+.diagram-shell{width:100%;min-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel);margin:14px 0 24px}
+.diagram-shell canvas{display:block}
 .type-row{display:flex;gap:10px;align-items:flex-start}
 .type-badge{display:inline-grid;place-items:center;flex:0 0 auto;width:24px;height:24px;border-radius:999px;background:var(--accent);color:#fff;font:800 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
 .toc-list{display:grid;gap:12px;margin:10px 0 28px}

@@ -42,9 +42,12 @@ function renderSidebar(){
   sidebar.innerHTML = entries.map((entry,index)=>`<div class="group">${entry.group?`<h2>${esc(entry.group)}</h2>`:''}<button class="item ${index===state.selected?'active':''}" onclick="activate(${index})">${entry.sidebar}</button></div>`).join('');
 }
 function renderGroupedSidebar(entries, tab){
-  const groups = sidebarGroups(entries);
+  entries = entries.map((entry,index)=>({...entry,index: entry.index ?? index}));
+  const standalone = entries.filter(entry => entry.group === null);
+  const grouped = entries.filter(entry => entry.group !== null);
   const switcher = tab === 'code' ? codeSidebarSwitcher() : '';
-  sidebar.innerHTML = switcher + groups.map(group => `<details class="namespace-group" ${group.open ? 'open' : ''}><summary>${group.badge ? typeBadge(group.badge) : ''}<span class="mono">${esc(group.name)}</span></summary><div class="namespace-items">${group.entries.map(entry => `<button class="item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('')}</div></details>`).join('');
+  const pages = standalone.map(entry => `<button class="item top-item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('');
+  sidebar.innerHTML = switcher + pages + sidebarGroups(grouped).map(group => `<details class="namespace-group" ${group.open ? 'open' : ''}><summary>${group.badge ? typeBadge(group.badge) : ''}<span class="mono">${esc(group.name)}</span></summary><div class="namespace-items">${group.entries.map(entry => `<button class="item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('')}</div></details>`).join('');
 }
 function codeSidebarSwitcher(){
   return `<div class="sidebar-switcher" aria-label="Code sidebar grouping"><button type="button" class="${state.codeGroupBy === 'namespaces' ? 'active' : ''}" onclick="setCodeGroupBy('namespaces')">Namespaces</button><button type="button" class="${state.codeGroupBy === 'types' ? 'active' : ''}" onclick="setCodeGroupBy('types')">Types</button></div>`;
@@ -58,12 +61,12 @@ function setCodeGroupBy(groupBy){
 }
 function sidebarGroups(entries){
   const groups = new Map();
-  entries.forEach((entry,index) => {
+  entries.forEach(entry => {
     const name = entry.group || 'Global';
     if (!groups.has(name)) groups.set(name, {name, badge: entry.groupType || null, entries: [], open: false});
     const group = groups.get(name);
-    group.entries.push({...entry,index});
-    if (index === state.selected) group.open = true;
+    group.entries.push(entry);
+    if (entry.index === state.selected) group.open = true;
   });
   return Array.from(groups.values());
 }
@@ -71,11 +74,12 @@ function renderContent(){
   const entries = entriesFor(state.tab);
   if (!entries.length){content.innerHTML=`<div class="empty">Run docs:generate after configuring the ${labels[state.tab]} documentation source.</div>`;return;}
   const item = entries[Math.min(state.selected, entries.length - 1)].item;
-  content.innerHTML = state.tab === 'api' ? apiDetail(item) : state.tab === 'database' ? dbDetail(item) : codeDetail(item);
+  content.innerHTML = state.tab === 'api' ? apiDetail(item) : state.tab === 'database' ? dbContent(item) : codeDetail(item);
+  if (item.kind === 'database-relations-diagram') requestAnimationFrame(drawDatabaseDiagram);
 }
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
-  if (tab === 'database') return (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}));
+  if (tab === 'database') return withEntryIndexes(databaseDiagramEntries().concat(databaseRelationEntries(), (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}))));
   return (docs.code.classes||[]).map(type => {
     const group = state.codeGroupBy === 'types' ? typeGroup(type.type) : type.namespace || 'Global';
     const groupType = state.codeGroupBy === 'types' ? type.type : 'namespace';
@@ -83,6 +87,7 @@ function entriesFor(tab){
     return {group,groupType,item:type,sidebar:`<div class="type-row">${typeBadge(type.type)}<span><span class="mono">${esc(type.name)}</span><div class="muted">${esc(typeLabel(type.type))}</div></span></div>`};
   });
 }
+function withEntryIndexes(entries){return entries.map((entry,index)=>({...entry,index}));}
 function typeGroup(type){return ({class:'Classes',interface:'Interfaces',trait:'Traits',enum:'Enums'}[type]||'Types');}
 function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace',method:'Method',property:'Property'}[type]||type||'Type');}
 function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N',method:'M',property:'P'}[type]||'C');}
@@ -90,8 +95,29 @@ function typeBadge(type){const label=typeLabel(type);return `<span class="type-b
 function apiDetail(endpoint){
   return `<h1>${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">${esc(endpoint.method)}</span> <span class="uri">${esc(endpoint.uri)}</span></p><p>${esc(endpoint.description || '')}</p><p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>${block(endpoint.parameters)}<h2>Request Body</h2>${block(endpoint.body)}<h2>Responses</h2>${block(endpoint.responses)}`;
 }
+function dbContent(item){
+  if (item.kind === 'database-relations-diagram') return dbRelationsDiagram();
+  if (item.kind === 'database-relation') return dbRelationDetail(item);
+
+  return dbDetail(item);
+}
+function databaseDiagramEntries(){
+  const relationships = list(docs.database.relationships);
+  return [{group:null,item:{kind:'database-relations-diagram'},sidebar:`<span class="mono">Diagrams</span><div class="muted">${relationships.length} relationships</div>`}];
+}
+function databaseRelationEntries(){
+  return list(docs.database.relationships).map(relation => ({group:'Relations',item:{kind:'database-relation',...relation},sidebar:`<span class="mono">${esc(relation.from_table)}.${esc(relation.from_column)}</span><div class="muted">references ${esc(relation.to_table)}.${esc(relation.to_column)}</div>`}));
+}
 function dbDetail(tableInfo){
   return `<h1>${esc(tableInfo.name)}${tableInfo.model ? `: ${dbModelLink(tableInfo)}` : ''}</h1><h2>Columns</h2>${table(['Name','Type','Model Type','Nullable','Default','Primary','Description'],list(tableInfo.columns).map(c=>[{html:`<span id="${memberId('column', c.name)}" class="column-anchor mono">${esc(c.name)}</span>`},c.type,c.model_type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no',c.description]))}<h2>Primary Keys</h2>${table(['Column'],list(tableInfo.primary_keys).map(k=>[k]))}<h2>Foreign Keys</h2>${table(['Column','References'],list(tableInfo.foreign_keys).map(k=>[k.column,{html:dbReferenceLink(k.references_table,k.references_column)}]))}<h2>Indexes</h2>${table(['Name','Unique','Columns'],list(tableInfo.indexes).map(i=>[i.name,i.unique?'yes':'no',list(i.columns).join(', ')]))}`;
+}
+function dbRelationsDiagram(){
+  const relationships = list(docs.database.relationships);
+
+  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p><div class="diagram-shell"><canvas id="database-relations-canvas" width="1400" height="900"></canvas></div><h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+}
+function dbRelationDetail(relation){
+  return `<h1>${esc(relation.from_table)}.${esc(relation.from_column)}</h1><p>References ${dbReferenceLink(relation.to_table, relation.to_column)}</p><div class="meta-grid"><strong>From table</strong><span>${dbTableReferenceLink(relation.from_table)}</span><strong>From column</strong><span class="mono">${esc(relation.from_column)}</span><strong>To table</strong><span>${dbTableReferenceLink(relation.to_table)}</span><strong>To column</strong><span class="mono">${esc(relation.to_column)}</span></div>`;
 }
 function dbModelLink(tableInfo){
   if (typeIndex(tableInfo.model_full_name || tableInfo.model) === null) return `<span class="mono">${esc(tableInfo.model)}</span>`;
@@ -100,11 +126,112 @@ function dbModelLink(tableInfo){
 }
 function dbReferenceLink(tableName, columnName){
   const label = `${tableName}.${columnName}`;
-  const index = entriesFor('database').findIndex(entry => entry.item.name === tableName);
+  const index = (docs.database.tables || []).findIndex(table => table.name === tableName);
 
   if (index === -1) return `<span class="mono">${esc(label)}</span>`;
 
   return `<a href="#${memberId('column', columnName)}" class="mono" onclick='activateDatabaseReference(${JSON.stringify(tableName)},${JSON.stringify(columnName)});return false;'>${esc(label)}</a>`;
+}
+function dbColumnReferenceLink(tableName, columnName){
+  return `<a href="#${memberId('column', columnName)}" class="mono" onclick='activateDatabaseReference(${JSON.stringify(tableName)},${JSON.stringify(columnName)});return false;'>${esc(tableName)}.${esc(columnName)}</a>`;
+}
+function dbTableReferenceLink(tableName){
+  const index = entriesFor('database').findIndex(entry => entry.item.name === tableName);
+  if (index === -1) return `<span class="mono">${esc(tableName)}</span>`;
+
+  return `<a href="#" class="mono" onclick="activate(${index});return false;">${esc(tableName)}</a>`;
+}
+function drawDatabaseDiagram(){
+  const canvas = document.getElementById('database-relations-canvas');
+  if (!canvas) return;
+
+  const tables = list(docs.database.tables);
+  const relationships = list(docs.database.relationships);
+  const relatedTables = new Set(relationships.flatMap(relation => [relation.from_table, relation.to_table]));
+  const diagramTables = tables.filter(table => relatedTables.has(table.name));
+  const columns = 3;
+  const boxWidth = 270;
+  const boxHeight = 230;
+  const rowGap = 74;
+  const colGap = 120;
+  const margin = 28;
+  const boxes = new Map();
+
+  diagramTables.forEach((table, index) => {
+    const shownColumns = diagramColumns(table);
+    const x = margin + (index % columns) * (boxWidth + colGap);
+    const y = margin + Math.floor(index / columns) * (boxHeight + rowGap);
+    boxes.set(table.name, {table,shownColumns,x,y,width:boxWidth,height:boxHeight});
+  });
+
+  const maxY = Math.max(360, ...Array.from(boxes.values()).map(box => box.y + box.height + margin));
+  const width = margin * 2 + columns * boxWidth + (columns - 1) * colGap;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${maxY}px`;
+  canvas.width = width * ratio;
+  canvas.height = maxY * ratio;
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.clearRect(0, 0, width, maxY);
+  ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.lineWidth = 1.5;
+
+  relationships.forEach(relation => drawRelationLine(ctx, boxes.get(relation.from_table), boxes.get(relation.to_table)));
+  boxes.forEach(box => drawTableBox(ctx, box));
+}
+function diagramColumns(table){
+  const indexed = new Set(list(table.indexes).flatMap(index => list(index.columns)));
+  const foreign = new Set(list(table.foreign_keys).map(key => key.column));
+  const important = list(table.columns).filter(column => column.primary || foreign.has(column.name) || indexed.has(column.name));
+
+  return important.length ? important.slice(0, 5) : list(table.columns).slice(0, 3);
+}
+function drawRelationLine(ctx, from, to){
+  if (!from || !to) return;
+
+  const start = {x: from.x + from.width, y: from.y + Math.min(from.height - 18, 72)};
+  const end = {x: to.x, y: to.y + Math.min(to.height - 18, 72)};
+  const midX = start.x + (end.x - start.x) / 2;
+  ctx.strokeStyle = '#344054';
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(end.x, end.y, 5, 0, Math.PI * 2);
+  ctx.stroke();
+}
+function drawTableBox(ctx, box){
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#344054';
+  ctx.lineWidth = 1.5;
+  ctx.fillRect(box.x, box.y, box.width, box.height);
+  ctx.strokeRect(box.x, box.y, box.width, box.height);
+  ctx.fillStyle = '#f5f7f4';
+  ctx.fillRect(box.x, box.y, box.width, 30);
+  ctx.strokeRect(box.x, box.y, box.width, 30);
+  ctx.fillStyle = '#172b13';
+  ctx.font = '700 14px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillText(box.table.name, box.x + 10, box.y + 20);
+  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = '#667085';
+  ctx.fillText('[table]', box.x + box.width - 58, box.y + 20);
+
+  box.shownColumns.forEach((column, index) => {
+    const y = box.y + 30 + index * 30;
+    ctx.strokeStyle = '#344054';
+    ctx.strokeRect(box.x, y, box.width, 30);
+    ctx.fillStyle = column.primary ? '#d6b900' : column.name.endsWith('_id') ? '#98a2b3' : '#172b13';
+    ctx.fillText(column.primary ? 'key' : column.name.endsWith('_id') ? 'fk' : '•', box.x + 10, y + 20);
+    ctx.fillStyle = '#172b13';
+    ctx.fillText(column.name, box.x + 42, y + 20);
+  });
+
+  ctx.strokeRect(box.x, box.y + box.height - 26, box.width, 26);
+  ctx.fillStyle = '#667085';
+  ctx.fillText(box.table.columns.length > box.shownColumns.length ? '...' : `${box.shownColumns.length} columns`, box.x + 10, box.y + box.height - 8);
 }
 function codeDetail(type){
   return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Cases', type.cases || [], 'case')}${enumDetails(type)}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;

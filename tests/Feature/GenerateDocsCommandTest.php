@@ -207,6 +207,13 @@ XML);
             'dbReferenceLink(k.references_table,k.references_column)',
             "memberId('column', c.name)",
             'codeSidebarSwitcher',
+            'databaseDiagramEntries',
+            'group:null',
+            'databaseRelationEntries',
+            'group:\'Relations\'',
+            'database-relations-canvas',
+            'drawDatabaseDiagram',
+            'drawTableBox',
             'setCodeGroupBy(\'types\')',
             'typeGroup(type.type)',
             "interface:'Interfaces'",
@@ -225,6 +232,8 @@ XML);
             'Return values',
         )
         ->not->toContain(
+            'databaseSidebarSwitcher',
+            'setDatabaseGroupBy',
             "groupType:'table'",
             "table:'T'",
         )
@@ -234,6 +243,8 @@ XML);
             '.code-page',
             '.on-page',
             '.column-anchor',
+            '.diagram-shell',
+            '.top-item',
             '.member-card',
         )
         ->and($assignMethod['line'])->toBe(22)
