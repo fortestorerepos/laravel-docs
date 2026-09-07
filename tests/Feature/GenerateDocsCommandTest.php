@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
 use LaravelDocs\LaravelDocs\LaravelDocs;
+use LaravelDocs\LaravelDocs\LaravelDocsServiceProvider;
 
 it('resolves the singleton', function () {
     expect(app(LaravelDocs::class))->toBeInstanceOf(LaravelDocs::class)
@@ -18,6 +19,17 @@ it('merges the package config', function () {
             'database' => true,
             'code' => true,
         ]);
+});
+
+it('registers and publishes package views', function () {
+    $publishPaths = LaravelDocsServiceProvider::pathsToPublish(LaravelDocsServiceProvider::class, 'laravel-docs-views');
+    $publishSources = array_map(
+        fn (string $path): string|false => realpath($path),
+        array_keys($publishPaths),
+    );
+
+    expect(view()->exists('laravel-docs::static.index'))->toBeTrue()
+        ->and($publishSources)->toContain(realpath(__DIR__.'/../../resources/views'));
 });
 
 it('generates normalized json and a static html site from existing raw outputs', function () {
@@ -84,6 +96,12 @@ XML);
         $table->string('serial_number')->index();
     });
 
+    Schema::create('password_reset_tokens', function ($table) {
+        $table->string('email')->primary();
+        $table->string('token');
+        $table->timestamp('created_at')->nullable();
+    });
+
     $this->artisan('docs:generate', ['--skip-tools' => true])
         ->expectsOutputToContain('Laravel documentation generated.')
         ->assertSuccessful();
@@ -91,17 +109,52 @@ XML);
     expect($files->exists($basePath.'/normalized/code.json'))->toBeTrue()
         ->and($files->exists($basePath.'/normalized/api.json'))->toBeTrue()
         ->and($files->exists($basePath.'/normalized/database.json'))->toBeTrue()
-        ->and($files->exists($basePath.'/generated/index.html'))->toBeTrue();
+        ->and($files->exists($basePath.'/generated/index.html'))->toBeTrue()
+        ->and($files->exists($basePath.'/generated/api.html'))->toBeTrue()
+        ->and($files->exists($basePath.'/generated/database.html'))->toBeTrue()
+        ->and($files->exists($basePath.'/generated/code.html'))->toBeTrue()
+        ->and($files->exists($basePath.'/generated/assets/index.css'))->toBeTrue()
+        ->and($files->exists($basePath.'/generated/assets/index.js'))->toBeTrue();
 
     $html = $files->get($basePath.'/generated/index.html');
+    $databaseHtml = $files->get($basePath.'/generated/database.html');
+    $javascript = $files->get($basePath.'/generated/assets/index.js');
     $code = json_decode($files->get($basePath.'/normalized/code.json'), true);
     $database = json_decode($files->get($basePath.'/normalized/database.json'), true);
 
-    expect($html)->toContain('data-tab="api"', 'data-tab="database"', 'data-tab="code"')
+    expect($html)->toContain(
+        'href="api.html"',
+        'href="database.html"',
+        'href="code.html"',
+        'data-active-tab="api"',
+        '<link rel="stylesheet" href="assets/index.css">',
+        '<script src="assets/index.js"></script>',
+    )
+        ->and($html)->not->toContain(
+            '#code',
+            '<style>',
+            'function renderSidebar',
+        )
+        ->and($databaseHtml)->toContain('data-active-tab="database"')
+        ->and($javascript)->toContain(
+            'namespace-group',
+            'renderGroupedSidebar',
+            "group:'Tables'",
+            'group.badge ? typeBadge(group.badge) : \'\'',
+            'title="${esc(label)}"',
+            'aria-label="${esc(label)}"',
+            'const list = value => Array.isArray(value) ? value : Object.values(value || {});',
+            'list(tableInfo.indexes).map',
+        )
+        ->not->toContain(
+            "groupType:'table'",
+            "table:'T'",
+        )
         ->and($code['classes'][0]['name'])->toBe('AssetService')
         ->and($code['classes'][0]['methods'][0]['name'])->toBe('assign')
         ->and($database['tables'])->sequence(
             fn ($table) => $table->name->toBe('assets'),
             fn ($table) => $table->name->toBe('categories'),
+            fn ($table) => $table->name->toBe('password_reset_tokens'),
         );
 });

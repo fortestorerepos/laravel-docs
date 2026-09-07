@@ -24,6 +24,8 @@ class LaravelDocsServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'laravel-docs');
+
         if (! $this->app->runningInConsole()) {
             return;
         }
@@ -31,6 +33,10 @@ class LaravelDocsServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/laravel-docs.php' => config_path('laravel-docs.php'),
         ], ['laravel-docs', 'laravel-docs-config']);
+
+        $this->publishes([
+            __DIR__.'/../resources/views' => resource_path('views/vendor/laravel-docs'),
+        ], ['laravel-docs', 'laravel-docs-views']);
 
         $this->commands([
             GenerateDocsCommand::class,

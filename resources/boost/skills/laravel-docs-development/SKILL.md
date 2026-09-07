@@ -40,6 +40,12 @@ Publish the config:
 php artisan vendor:publish --tag=laravel-docs-config
 ```
 
+Publish frontend Blade views only when the generated static site needs customization:
+
+```bash
+php artisan vendor:publish --tag=laravel-docs-views
+```
+
 ### 3. Configure documentation sections
 
 Use `config/laravel-docs.php` to set:
@@ -68,6 +74,7 @@ storage/app/laravel-docs/generated/index.html
 ```
 
 Use this only to view the final static site; it does not require a running Laravel application.
+The generated pages are rendered from package Blade views before they are written as static HTML. Section pages are available at `api.html`, `database.html`, and `code.html`, with shared `assets/index.css` and `assets/index.js`.
 
 ## Rules, References, and Templates
 
@@ -76,6 +83,8 @@ Read before executing:
 - `config/laravel-docs.php`
 - `src/LaravelDocsServiceProvider.php`
 - `src/Console/Commands/GenerateDocsCommand.php`
+- `resources/views/static/`
+- `resources/views/static/assets/`
 - `README.md`
 
 ## Examples
@@ -101,5 +110,6 @@ php artisan docs:generate --skip-tools
 - do not use Laravel Docs as a replacement parser for phpDocumentor or Scribe
 - do not require a web route, queue, Redis, database table, or authentication to view generated docs
 - do not point consumers at raw generated HTML from upstream tools
+- do not edit generated `index.html` directly when a persistent frontend customization belongs in published package views
 - do not leave Scribe intermediate files or phpDocumentor cache in the application root
 - do not document package internals as part of the consuming app API

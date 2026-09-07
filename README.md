@@ -27,6 +27,12 @@ Publish the configuration file:
 php artisan vendor:publish --tag=laravel-docs-config
 ```
 
+Publish the static site Blade views when you want to customize the generated frontend:
+
+```bash
+php artisan vendor:publish --tag=laravel-docs-views
+```
+
 Scribe is installed with Laravel Docs. Laravel Docs forces Scribe's generated output and intermediate cache into `storage/app/laravel-docs`.
 For PHP code docs, Laravel Docs first looks for `phpdoc`, then downloads the official phpDocumentor PHAR automatically when needed.
 
@@ -90,7 +96,7 @@ The generated static site is available at:
 storage/app/laravel-docs/generated/index.html
 ```
 
-You can open that file directly in a browser without running Laravel.
+You can open that file directly in a browser without running Laravel. The generated sections are routed as static pages: `api.html`, `database.html`, and `code.html`.
 
 When you already have raw structured outputs and only want to rebuild the normalized JSON and static site, run:
 
@@ -113,10 +119,17 @@ storage/app/laravel-docs/
 |   |-- database.json
 |   `-- code.json
 `-- generated/
-    `-- index.html
+    |-- index.html
+    |-- api.html
+    |-- database.html
+    |-- code.html
+    `-- assets/
+        |-- index.css
+        `-- index.js
 ```
 
 The UI is a compact static HTML page with `API`, `DB`, and `Code` tabs in the header.
+Its source lives in package Blade views and assets under `resources/views/static`, so the generated frontend can be customized without editing PHP generator strings.
 
 ## Changelog
 
