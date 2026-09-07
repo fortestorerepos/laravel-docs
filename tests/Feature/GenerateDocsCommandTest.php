@@ -46,25 +46,36 @@ it('generates normalized json and a static html site from existing raw outputs',
 
     $files->put($basePath.'/raw/phpdocumentor/structure.xml', <<<'XML'
 <project>
-  <class namespace="\App\Services">
+  <file path="Services/AssetService.php">
+  <class final="true" abstract="false" namespace="\App\Services" line="12">
     <name>AssetService</name>
     <full_name>\App\Services\AssetService</full_name>
     <docblock><description>Handles asset operations.</description></docblock>
-    <method visibility="public">
+    <property namespace="\App\Services\AssetService" line="14" visibility="private">
+      <name>repository</name>
+      <full_name>\App\Services\AssetService::$repository</full_name>
+      <type>\App\Repositories\AssetRepository</type>
+      <docblock><description>Stores assets.</description></docblock>
+    </property>
+    <method visibility="public" static="false" final="false" line="22">
       <name>assign</name>
+      <full_name>\App\Services\AssetService::assign()</full_name>
       <argument><name>user</name><type>App\Models\User</type></argument>
       <argument><name>asset</name><type>App\Models\Asset</type></argument>
       <docblock>
         <description>Assigns an asset to a user.</description>
-        <tag name="return" type="App\Models\AssetAssignment" />
+        <tag name="return" type="App\Models\AssetAssignment" description="The created assignment." />
       </docblock>
     </method>
   </class>
+  </file>
+  <file path="Contracts/AssignsAssets.php">
   <interface namespace="\App\Contracts">
     <name>AssignsAssets</name>
     <full_name>\App\Contracts\AssignsAssets</full_name>
     <docblock><description>Assigns assets to users.</description></docblock>
   </interface>
+  </file>
 </project>
 XML);
 
@@ -157,6 +168,13 @@ XML);
             'setCodeGroupBy(\'types\')',
             'typeGroup(type.type)',
             "interface:'Interfaces'",
+            'memberId',
+            'codeToc',
+            'propertyDetails',
+            'methodDetails',
+            'id="${memberId(\'method\', method.name)}"',
+            'id="${memberId(\'property\', property.name)}"',
+            'Return values',
         )
         ->not->toContain(
             "groupType:'table'",
@@ -165,8 +183,17 @@ XML);
         ->and($css)->toContain(
             '.sidebar-switcher',
             '.sidebar-switcher button.active',
+            '.code-page',
+            '.on-page',
+            '.member-card',
         )
         ->and($assetService['methods'][0]['name'])->toBe('assign')
+        ->and($assetService['methods'][0]['line'])->toBe(22)
+        ->and($assetService['methods'][0]['return_description'])->toBe('The created assignment.')
+        ->and($assetService['properties'][0]['visibility'])->toBe('private')
+        ->and($assetService['properties'][0]['line'])->toBe(14)
+        ->and($assetService['file'])->toBe('Services/AssetService.php')
+        ->and($assetService['final'])->toBeTrue()
         ->and($assignsAssets['type'])->toBe('interface')
         ->and($database['tables'])->sequence(
             fn ($table) => $table->name->toBe('assets'),

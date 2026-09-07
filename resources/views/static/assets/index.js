@@ -13,6 +13,8 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp
 const block = value => `<pre>${esc(JSON.stringify(value ?? {}, null, 2))}</pre>`;
 const table = (headers, rows) => rows.length ? `<table><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>';
 const list = value => Array.isArray(value) ? value : Object.values(value || {});
+const memberId = (kind, name) => `${kind}_${String(name || '').replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
+const basename = path => String(path || '').split(/[\\/]/).pop();
 function activate(index){state.selected=index;render();}
 function render(){renderSidebar();renderContent();}
 function renderSidebar(){
@@ -64,8 +66,8 @@ function entriesFor(tab){
   });
 }
 function typeGroup(type){return ({class:'Classes',interface:'Interfaces',trait:'Traits',enum:'Enums'}[type]||'Types');}
-function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace'}[type]||type||'Type');}
-function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N'}[type]||'C');}
+function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace',method:'Method',property:'Property'}[type]||type||'Type');}
+function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N',method:'M',property:'P'}[type]||'C');}
 function typeBadge(type){const label=typeLabel(type);return `<span class="type-badge" title="${esc(label)}" aria-label="${esc(label)}">${typeIcon(type)}</span>`;}
 function apiDetail(endpoint){
   return `<h1>${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">${esc(endpoint.method)}</span> <span class="uri">${esc(endpoint.uri)}</span></p><p>${esc(endpoint.description || '')}</p><p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>${block(endpoint.parameters)}<h2>Request Body</h2>${block(endpoint.body)}<h2>Responses</h2>${block(endpoint.responses)}`;
@@ -74,14 +76,89 @@ function dbDetail(tableInfo){
   return `<h1>${esc(tableInfo.name)}</h1><h2>Columns</h2>${table(['Name','Type','Nullable','Default','Primary'],list(tableInfo.columns).map(c=>[c.name,c.type,c.nullable?'yes':'no',c.default,c.primary?'yes':'no']))}<h2>Primary Keys</h2>${table(['Column'],list(tableInfo.primary_keys).map(k=>[k]))}<h2>Foreign Keys</h2>${table(['Name','Column','References'],list(tableInfo.foreign_keys).map(k=>[k.name,k.column,`${k.references_table}.${k.references_column}`]))}<h2>Indexes</h2>${table(['Name','Unique','Columns'],list(tableInfo.indexes).map(i=>[i.name,i.unique?'yes':'no',list(i.columns).join(', ')]))}`;
 }
 function codeDetail(type){
-  return `<div class="type-row">${typeBadge(type.type)}<div><h1>${esc(type.name)}</h1><p class="muted">${typeLabel(type.type)} in <span class="mono">${esc(type.namespace || 'Global namespace')}</span></p></div></div><p>${esc(type.summary || '')}</p><div class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${esc(type.parent || 'None')}</span><strong>Interfaces</strong><span>${esc((type.interfaces||[]).join(', ') || 'None')}</span></div><h2>Methods</h2>${methodList(type.methods||[])}<h2>Properties</h2>${table(['Name','Type','Description'],(type.properties||[]).map(p=>[p.name,p.type,p.summary]))}`;
+  return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;
 }
-function methodList(methods){
-  if (!methods.length) return '<p class="muted">No public methods found.</p>';
-  return `<div class="method-list">${methods.map(method=>`<div class="method-block"><div class="signature mono">${esc(methodSignature(method))}</div><p>${esc(method.summary || '')}</p></div>`).join('')}</div>`;
+function codeHeader(type){
+  const segments = (type.namespace || '').split('\\').filter(Boolean);
+  const breadcrumb = segments.length ? `<nav class="breadcrumbs">${segments.map(part=>`<span>${esc(part)}</span>`).join('<span>\\</span>')}</nav>` : '';
+  const implementsText = (type.interfaces || []).length ? `<p class="implements">implements ${list(type.interfaces).map(linkReference).join(', ')}</p>` : '';
+  const fileText = type.file ? `<a href="#source">${esc(basename(type.file))}</a>${type.line ? ` : ${esc(type.line)}` : ''}` : '';
+
+  return `${breadcrumb}<div class="code-heading"><div>${typeBadge(type.type)}<h1>${esc(type.name)}</h1>${implementsText}</div><div class="source-link">${fileText}</div></div><div class="flags">${flag(type.type, typeLabel(type.type))}${type.final ? flag('final','Final') : ''}${type.abstract ? flag('abstract','Abstract') : ''}</div>${type.summary ? `<p class="lead">${esc(type.summary)}</p>` : ''}${type.description ? `<p>${esc(type.description)}</p>` : ''}<div id="source" class="meta-grid"><strong>Namespace</strong><span class="mono">${esc(type.namespace || 'Global namespace')}</span><strong>Parent class</strong><span>${type.parent ? linkReference(type.parent) : 'None'}</span><strong>File</strong><span>${type.file ? `${esc(type.file)}${type.line ? `:${esc(type.line)}` : ''}` : 'Not available'}</span></div>`;
+}
+function codeToc(type){
+  return `<section class="toc-section"><h2>Table of Contents</h2><div class="toc-grid">${tocBlock('Interfaces', list(type.interfaces).map(item => ({name: shortReference(item), href:'#interfaces'})))}${tocBlock('Properties', list(type.properties).map(item => ({name:`$${item.name}`, href:`#${memberId('property', item.name)}`, detail:item.type})))}${tocBlock('Methods', list(type.methods).map(item => ({name:`${item.name}()`, href:`#${memberId('method', item.name)}`, detail:item.return_type, summary:item.summary})))}</div></section>`;
+}
+function tocBlock(title, entries){
+  if (!entries.length) return '';
+  return `<div><h3>${esc(title)}</h3>${entries.map(entry=>`<p><a href="${entry.href}">${esc(entry.name)}</a>${entry.detail ? ` : <span class="mono">${esc(entry.detail)}</span>` : ''}</p>${entry.summary ? `<p class="muted italic">${esc(entry.summary)}</p>` : ''}`).join('')}</div>`;
+}
+function memberSummary(title, entries, kind){
+  entries = list(entries);
+  if (!entries.length) return '';
+  if (kind === 'interface') {
+    return `<section id="interfaces"><h2>Interfaces</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge('interface')}<div><a href="#interfaces">${esc(shortReference(item))}</a></div></div>`).join('')}</div></section>`;
+  }
+
+  return `<section id="${kind === 'property' ? 'properties' : 'methods'}"><h2>${esc(title)}</h2><div class="summary-list">${entries.map(item=>`<div class="summary-row">${typeBadge(kind)}<div><a href="#${memberId(kind, item.name)}">${kind === 'property' ? '$' : ''}${esc(item.name)}${kind === 'method' ? '()' : ''}</a>${item.type || item.return_type ? ` : <span class="mono">${esc(item.type || item.return_type)}</span>` : ''}${item.summary ? `<p class="italic">${esc(item.summary)}</p>` : ''}</div></div>`).join('')}</div></section>`;
+}
+function propertyDetails(type){
+  const properties = list(type.properties);
+  if (!properties.length) return '';
+
+  return `<section><h2>Properties</h2>${properties.map(property=>`<article class="member-card" id="${memberId('property', property.name)}"><div class="member-title"><h3>$${esc(property.name)}</h3><div>${visibility(property.visibility)}${property.static ? flag('static','Static') : ''}${property.read_only ? flag('read-only','Read-only') : ''}</div></div>${memberSource(type, property)}${property.summary ? `<p>${esc(property.summary)}</p>` : ''}${property.description ? `<p>${esc(property.description)}</p>` : ''}<pre>${esc(propertySignature(property))}</pre>${property.inherited_from ? `<p class="muted">Inherited from ${linkReference(property.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
+}
+function methodDetails(type){
+  const methods = list(type.methods);
+  if (!methods.length) return '';
+
+  return `<section><h2>Methods</h2>${methods.map(method=>`<article class="member-card" id="${memberId('method', method.name)}"><div class="member-title"><h3>${esc(method.name)}()</h3><div>${visibility(method.visibility)}${method.static ? flag('static','Static') : ''}${method.final ? flag('final','Final') : ''}${method.abstract ? flag('abstract','Abstract') : ''}</div></div>${memberSource(type, method)}<pre>${esc(methodSignature(method))}</pre>${method.summary ? `<p>${esc(method.summary)}</p>` : ''}${method.description ? `<p>${esc(method.description)}</p>` : ''}${parametersTable(method)}${returnBlock(method)}${method.inherited_from ? `<p class="muted">Inherited from ${linkReference(method.inherited_from)}</p>` : ''}</article>`).join('')}</section>`;
+}
+function parametersTable(method){
+  const parameters = list(method.parameters);
+  if (!parameters.length) return '';
+
+  return `<h4>Parameters</h4>${table(['Name','Type','Default','Description'], parameters.map(parameter=>[`$${parameter.name}`, parameter.type, parameter.default, parameter.description]))}`;
+}
+function returnBlock(method){
+  if (!method.return_type && !method.return_description) return '';
+
+  return `<h4>Return values</h4><p>${method.return_type ? `<span class="mono">${esc(method.return_type)}</span>` : ''}${method.return_description ? ` ${esc(method.return_description)}` : ''}</p>`;
+}
+function memberSource(type, member){
+  if (!type.file && !member.line) return '';
+
+  return `<p class="source-link"><a href="#source">${esc(basename(type.file) || 'Source')}</a>${member.line ? ` : ${esc(member.line)}` : ''}</p>`;
+}
+function onThisPage(type){
+  const interfaces = list(type.interfaces);
+  const properties = list(type.properties);
+  const methods = list(type.methods);
+
+  return `<nav class="on-page"><h2>On this page</h2><p>Table Of Contents</p>${interfaces.length ? '<a href="#interfaces">Interfaces</a>' : ''}${properties.length ? '<a href="#properties">Properties</a>' : ''}${methods.length ? '<a href="#methods">Methods</a>' : ''}${properties.length ? `<h3>Properties</h3>${properties.map(property=>`<a href="#${memberId('property', property.name)}">$${esc(property.name)}</a>`).join('')}` : ''}${methods.length ? `<h3>Methods</h3>${methods.map(method=>`<a href="#${memberId('method', method.name)}">${esc(method.name)}()</a>`).join('')}` : ''}</nav>`;
+}
+function visibility(value){return value ? flag(value, value.charAt(0).toUpperCase() + value.slice(1)) : '';}
+function flag(type, label){return `<span class="flag flag-${esc(type)}">${esc(label)}</span>`;}
+function linkReference(value){
+  const index = typeIndex(value);
+  if (index === null) return `<span class="mono">${esc(shortReference(value))}</span>`;
+
+  return `<a href="#" onclick="activate(${index});return false;">${esc(shortReference(value))}</a>`;
+}
+function typeIndex(value){
+  const normalized = String(value || '').replace(/^\\+/, '');
+  const index = (docs.code.classes || []).findIndex(type => [type.full_name, `${type.namespace}\\${type.name}`, type.name].map(item => String(item || '').replace(/^\\+/, '')).includes(normalized));
+
+  return index === -1 ? null : index;
+}
+function shortReference(value){const parts = String(value || '').replace(/^\\+/, '').split('\\'); return parts.pop() || value || '';}
+function propertySignature(property){
+  return `${[property.visibility, property.static ? 'static' : '', property.type].filter(Boolean).join(' ')} $${property.name}${property.default ? ` = ${property.default}` : ''}`;
 }
 function methodSignature(method){
   const params = (method.parameters||[]).map(p => `${p.type ? p.type + ' ' : ''}$${p.name || 'parameter'}${p.default ? ' = ' + p.default : ''}`).join(', ');
-  return `${method.name || 'method'}(${params})${method.return_type ? ': ' + method.return_type : ''}`;
+  const prefix = [method.visibility, method.static ? 'static' : ''].filter(Boolean).join(' ');
+
+  return `${prefix ? `${prefix} ` : ''}${method.name || 'method'}(${params})${method.return_type ? ': ' + method.return_type : ''}`;
 }
 render();

@@ -24,9 +24,19 @@ class CodeNormalizer
 
         $types = [];
 
-        foreach (['class', 'interface', 'trait', 'enum'] as $type) {
-            foreach ($xml->xpath('//'.$type) ?: [] as $node) {
-                $types[] = $this->normalizeType($node, $type);
+        foreach ($xml->xpath('//file') ?: [] as $file) {
+            foreach (['class', 'interface', 'trait', 'enum'] as $type) {
+                foreach ($file->xpath('./'.$type) ?: [] as $node) {
+                    $types[] = $this->normalizeType($node, $type, $this->attribute($file, 'path'));
+                }
+            }
+        }
+
+        if ($types === []) {
+            foreach (['class', 'interface', 'trait', 'enum'] as $type) {
+                foreach ($xml->xpath('//'.$type) ?: [] as $node) {
+                    $types[] = $this->normalizeType($node, $type, '');
+                }
             }
         }
 
@@ -49,17 +59,23 @@ class CodeNormalizer
     /**
      * @return array<string, mixed>
      */
-    private function normalizeType(SimpleXMLElement $node, string $type): array
+    private function normalizeType(SimpleXMLElement $node, string $type, string $file): array
     {
         $name = $this->value($node, 'name');
         $fqsen = $this->value($node, 'fqsen') ?: $this->value($node, 'full_name');
 
         return [
             'name' => $this->shortName($name, $fqsen),
+            'full_name' => $fqsen,
             'namespace' => $this->namespaceFor($node, $name, $fqsen),
             'type' => $type,
-            'summary' => trim((string) ($node->docblock->description ?? $node->description ?? $node->summary ?? '')),
+            'summary' => $this->summary($node),
+            'description' => $this->longDescription($node),
             'parent' => $this->attribute($node, 'extends') ?: $this->textFromFirst($node, ['extends', 'parent']),
+            'file' => $file,
+            'line' => $this->integerAttribute($node, 'line'),
+            'final' => $this->booleanAttribute($node, 'final'),
+            'abstract' => $this->booleanAttribute($node, 'abstract'),
             'interfaces' => $this->valuesFrom($node, ['implements', 'interface']),
             'methods' => $this->methods($node),
             'properties' => $this->properties($node),
@@ -74,15 +90,21 @@ class CodeNormalizer
         $methods = [];
 
         foreach ($node->xpath('.//method') ?: [] as $method) {
-            if ($this->attribute($method, 'visibility') !== 'public') {
-                continue;
-            }
-
             $methods[] = [
                 'name' => $this->value($method, 'name'),
-                'summary' => trim((string) ($method->docblock->description ?? $method->description ?? $method->summary ?? '')),
+                'full_name' => $this->value($method, 'full_name'),
+                'summary' => $this->summary($method),
+                'description' => $this->longDescription($method),
+                'visibility' => $this->attribute($method, 'visibility') ?: 'public',
+                'line' => $this->integerAttribute($method, 'line'),
+                'final' => $this->booleanAttribute($method, 'final'),
+                'abstract' => $this->booleanAttribute($method, 'abstract'),
+                'static' => $this->booleanAttribute($method, 'static'),
+                'return_by_reference' => $this->booleanAttribute($method, 'returnByReference'),
+                'inherited_from' => $this->textFromDirectChild($method, 'inherited_from'),
                 'parameters' => $this->parameters($method),
                 'return_type' => $this->returnType($method),
+                'return_description' => $this->tagDescription($method, 'return'),
             ];
         }
 
@@ -97,10 +119,15 @@ class CodeNormalizer
         $parameters = [];
 
         foreach ($method->xpath('.//argument|.//parameter|.//param') ?: [] as $parameter) {
+            $name = ltrim($this->value($parameter, 'name') ?: $this->attribute($parameter, 'variable'), '$');
+
             $parameters[] = [
-                'name' => ltrim($this->value($parameter, 'name') ?: $this->attribute($parameter, 'variable'), '$'),
+                'name' => $name,
                 'type' => $this->value($parameter, 'type'),
                 'default' => $this->value($parameter, 'default'),
+                'description' => $this->parameterDescription($method, $name),
+                'line' => $this->integerAttribute($parameter, 'line'),
+                'by_reference' => $this->booleanAttribute($parameter, 'by_reference'),
             ];
         }
 
@@ -115,14 +142,18 @@ class CodeNormalizer
         $properties = [];
 
         foreach ($node->xpath('.//property') ?: [] as $property) {
-            if ($this->attribute($property, 'visibility') !== 'public') {
-                continue;
-            }
-
             $properties[] = [
                 'name' => $this->value($property, 'name'),
+                'full_name' => $this->value($property, 'full_name'),
                 'type' => $this->value($property, 'type'),
-                'summary' => trim((string) ($property->docblock->description ?? $property->description ?? $property->summary ?? '')),
+                'summary' => $this->summary($property),
+                'description' => $this->longDescription($property),
+                'visibility' => $this->attribute($property, 'visibility') ?: 'public',
+                'line' => $this->integerAttribute($property, 'line'),
+                'default' => $this->value($property, 'default'),
+                'static' => $this->booleanAttribute($property, 'static'),
+                'read_only' => $this->booleanAttribute($property, 'read_only') || $this->booleanAttribute($property, 'readonly'),
+                'inherited_from' => $this->textFromDirectChild($property, 'inherited_from'),
             ];
         }
 
@@ -155,6 +186,16 @@ class CodeNormalizer
         return trim((string) ($node->attributes()[$attribute] ?? ''));
     }
 
+    private function integerAttribute(SimpleXMLElement $node, string $attribute): int
+    {
+        return (int) $this->attribute($node, $attribute);
+    }
+
+    private function booleanAttribute(SimpleXMLElement $node, string $attribute): bool
+    {
+        return in_array(strtolower($this->attribute($node, $attribute)), ['1', 'true', 'yes'], true);
+    }
+
     private function value(SimpleXMLElement $node, string $name): string
     {
         return $this->attribute($node, $name) ?: trim((string) ($node->{$name} ?? ''));
@@ -174,6 +215,36 @@ class CodeNormalizer
             if ($type !== '') {
                 return $type;
             }
+        }
+
+        return '';
+    }
+
+    private function summary(SimpleXMLElement $node): string
+    {
+        return trim((string) ($node->docblock->description ?? $node->description ?? $node->summary ?? ''));
+    }
+
+    private function longDescription(SimpleXMLElement $node): string
+    {
+        return trim((string) ($node->docblock->{'long-description'} ?? $node->{'long-description'} ?? ''));
+    }
+
+    private function parameterDescription(SimpleXMLElement $method, string $name): string
+    {
+        foreach ($method->xpath('./docblock/tag[@name="param"]') ?: [] as $tag) {
+            if (ltrim($this->attribute($tag, 'variable'), '$') === $name) {
+                return $this->attribute($tag, 'description');
+            }
+        }
+
+        return '';
+    }
+
+    private function tagDescription(SimpleXMLElement $node, string $name): string
+    {
+        foreach ($node->xpath('./docblock/tag[@name="'.$name.'"]') ?: [] as $tag) {
+            return $this->attribute($tag, 'description');
         }
 
         return '';
