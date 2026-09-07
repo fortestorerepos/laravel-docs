@@ -2,12 +2,15 @@ const docs = JSON.parse(document.getElementById('docs-data').textContent);
 const labels = {api:'API', database:'DB', code:'Code'};
 const externalDocs = docs._meta?.external_docs || {};
 const activeTab = document.body.dataset.activeTab || 'api';
+const themeToggle = document.getElementById('theme-toggle');
 let state = {
   codeGroupBy: localStorage.getItem('laravel-docs-code-group-by') || 'namespaces',
+  theme: localStorage.getItem('laravel-docs-theme') || 'light',
   selected: 0,
   tab: ['api','database','code'].includes(activeTab) ? activeTab : 'api',
 };
 if (!['namespaces','types'].includes(state.codeGroupBy)) state.codeGroupBy = 'namespaces';
+if (!['light','dark'].includes(state.theme)) state.theme = 'light';
 const sidebar = document.getElementById('sidebar');
 const content = document.getElementById('content');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -17,7 +20,19 @@ const table = (headers, rows) => rows.length ? `<table><thead><tr>${headers.map(
 const list = value => Array.isArray(value) ? value : Object.values(value || {});
 const memberId = (kind, name) => `${kind}_${String(name || '').replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
 const basename = path => String(path || '').split(/[\\/]/).pop();
+const diagramView = {scale: Number(localStorage.getItem('laravel-docs-database-diagram-scale') || '1')};
 function activate(index){state.selected=index;render();}
+function applyTheme(){
+  document.documentElement.dataset.theme = state.theme;
+  if (themeToggle) themeToggle.textContent = state.theme === 'dark' ? 'Dark' : 'Light';
+}
+function toggleTheme(){
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('laravel-docs-theme', state.theme);
+  applyTheme();
+}
+themeToggle?.addEventListener('click', toggleTheme);
+applyTheme();
 function activateCodeReference(value){
   const index = typeIndex(value);
   if (index === null) return;
@@ -79,7 +94,7 @@ function renderContent(){
 }
 function entriesFor(tab){
   if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
-  if (tab === 'database') return withEntryIndexes(databaseDiagramEntries().concat(databaseRelationEntries(), (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}))));
+  if (tab === 'database') return withEntryIndexes(databaseDiagramEntries().concat(databaseConstraintEntries(), databaseRelationEntries(), (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}))));
   return (docs.code.classes||[]).map(type => {
     const group = state.codeGroupBy === 'types' ? typeGroup(type.type) : type.namespace || 'Global';
     const groupType = state.codeGroupBy === 'types' ? type.type : 'namespace';
@@ -97,6 +112,7 @@ function apiDetail(endpoint){
 }
 function dbContent(item){
   if (item.kind === 'database-relations-diagram') return dbRelationsDiagram();
+  if (item.kind === 'database-constraints') return dbConstraintsPage();
   if (item.kind === 'database-relation') return dbRelationDetail(item);
 
   return dbDetail(item);
@@ -104,6 +120,10 @@ function dbContent(item){
 function databaseDiagramEntries(){
   const relationships = list(docs.database.relationships);
   return [{group:null,item:{kind:'database-relations-diagram'},sidebar:`<span class="mono">Diagrams</span><div class="muted">${relationships.length} relationships</div>`}];
+}
+function databaseConstraintEntries(){
+  const constraints = list(docs.database.constraints);
+  return [{group:null,item:{kind:'database-constraints'},sidebar:`<span class="mono">Constraints</span><div class="muted">${constraints.length} foreign keys</div>`}];
 }
 function databaseRelationEntries(){
   return list(docs.database.relationships).map(relation => ({group:'Relations',item:{kind:'database-relation',...relation},sidebar:`<span class="mono">${esc(relation.from_table)}.${esc(relation.from_column)}</span><div class="muted">references ${esc(relation.to_table)}.${esc(relation.to_column)}</div>`}));
@@ -114,7 +134,29 @@ function dbDetail(tableInfo){
 function dbRelationsDiagram(){
   const relationships = list(docs.database.relationships);
 
-  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p><div class="diagram-shell"><canvas id="database-relations-canvas" width="1400" height="900"></canvas></div><h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p><div class="diagram-toolbar"><button type="button" onclick="setDiagramZoom(-0.1)">-</button><button type="button" onclick="setDiagramZoom(0)">Reset</button><button type="button" onclick="setDiagramZoom(0.1)">+</button></div><div class="diagram-shell"><canvas id="database-relations-canvas" width="1400" height="900"></canvas></div><h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+}
+function dbConstraintsPage(){
+  const constraints = list(docs.database.constraints);
+
+  return `<h1>Constraints</h1><h2>${constraints.length} Foreign Key Constraints</h2><label class="search-label">Search:<input type="search" oninput="filterConstraintRows(this.value)" placeholder="Filter constraints"></label>${constraints.length ? `<table><thead><tr><th>Constraint Name</th><th>Child Column</th><th>Parent Column</th><th>Delete Rule</th></tr></thead><tbody>${constraints.map(constraintRow).join('')}</tbody></table>` : '<p class="muted">None.</p>'}`;
+}
+function constraintRow(constraint){
+  const searchable = [constraint.name, constraint.child_table, constraint.child_column, constraint.parent_table, constraint.parent_column, constraint.on_delete].join(' ').toLowerCase();
+
+  return `<tr class="constraint-row" data-search="${esc(searchable)}"><td class="mono">${esc(constraint.name)}</td><td>${dbColumnReferenceLink(constraint.child_table,constraint.child_column)}</td><td>${dbReferenceLink(constraint.parent_table,constraint.parent_column)}</td><td>${esc(deleteRule(constraint.on_delete))}</td></tr>`;
+}
+function filterConstraintRows(value){
+  const query = String(value || '').trim().toLowerCase();
+  document.querySelectorAll('.constraint-row').forEach(row => {
+    row.hidden = query !== '' && !row.dataset.search.includes(query);
+  });
+}
+function deleteRule(rule){
+  const value = String(rule || '').trim();
+  if (value === '') return 'Not specified';
+
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)} delete`;
 }
 function dbRelationDetail(relation){
   return `<h1>${esc(relation.from_table)}.${esc(relation.from_column)}</h1><p>References ${dbReferenceLink(relation.to_table, relation.to_column)}</p><div class="meta-grid"><strong>From table</strong><span>${dbTableReferenceLink(relation.from_table)}</span><strong>From column</strong><span class="mono">${esc(relation.from_column)}</span><strong>To table</strong><span>${dbTableReferenceLink(relation.to_table)}</span><strong>To column</strong><span class="mono">${esc(relation.to_column)}</span></div>`;
@@ -149,37 +191,78 @@ function drawDatabaseDiagram(){
   const relationships = list(docs.database.relationships);
   const relatedTables = new Set(relationships.flatMap(relation => [relation.from_table, relation.to_table]));
   const diagramTables = tables.filter(table => relatedTables.has(table.name));
-  const columns = 3;
   const boxWidth = 270;
   const boxHeight = 230;
-  const rowGap = 74;
-  const colGap = 120;
+  const rowGap = 54;
+  const colGap = 140;
   const margin = 28;
-  const boxes = new Map();
+  const boxes = layoutDiagramTables(diagramTables, relationships, {boxWidth, boxHeight, rowGap, colGap, margin});
 
-  diagramTables.forEach((table, index) => {
-    const shownColumns = diagramColumns(table);
-    const x = margin + (index % columns) * (boxWidth + colGap);
-    const y = margin + Math.floor(index / columns) * (boxHeight + rowGap);
-    boxes.set(table.name, {table,shownColumns,x,y,width:boxWidth,height:boxHeight});
-  });
-
+  const maxX = Math.max(900, ...Array.from(boxes.values()).map(box => box.x + box.width + margin));
   const maxY = Math.max(360, ...Array.from(boxes.values()).map(box => box.y + box.height + margin));
-  const width = margin * 2 + columns * boxWidth + (columns - 1) * colGap;
+  const scale = Math.min(1.8, Math.max(0.5, diagramView.scale || 1));
   const ratio = window.devicePixelRatio || 1;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${maxY}px`;
-  canvas.width = width * ratio;
-  canvas.height = maxY * ratio;
+  canvas.style.width = `${maxX * scale}px`;
+  canvas.style.height = `${maxY * scale}px`;
+  canvas.width = maxX * scale * ratio;
+  canvas.height = maxY * scale * ratio;
+  makeDiagramDraggable(canvas.closest('.diagram-shell'));
 
   const ctx = canvas.getContext('2d');
-  ctx.scale(ratio, ratio);
-  ctx.clearRect(0, 0, width, maxY);
+  ctx.scale(ratio * scale, ratio * scale);
+  ctx.clearRect(0, 0, maxX, maxY);
   ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.lineWidth = 1.5;
 
   relationships.forEach(relation => drawRelationLine(ctx, boxes.get(relation.from_table), boxes.get(relation.to_table)));
   boxes.forEach(box => drawTableBox(ctx, box));
+}
+function setDiagramZoom(delta){
+  diagramView.scale = delta === 0 ? 1 : Math.min(1.8, Math.max(0.5, diagramView.scale + delta));
+  localStorage.setItem('laravel-docs-database-diagram-scale', String(diagramView.scale));
+  drawDatabaseDiagram();
+}
+function layoutDiagramTables(tables, relationships, options){
+  const degree = new Map();
+  const targets = new Map();
+  tables.forEach(table => degree.set(table.name, 0));
+  relationships.forEach(relation => {
+    degree.set(relation.from_table, (degree.get(relation.from_table) || 0) + 1);
+    degree.set(relation.to_table, (degree.get(relation.to_table) || 0) + 1);
+    if (!targets.has(relation.from_table)) targets.set(relation.from_table, []);
+    targets.get(relation.from_table).push(relation.to_table);
+  });
+
+  const hubCount = Math.max(2, Math.min(6, Math.ceil(Math.sqrt(tables.length))));
+  const hubs = [...tables].sort((first, second) => (degree.get(second.name) || 0) - (degree.get(first.name) || 0) || first.name.localeCompare(second.name)).slice(0, hubCount);
+  const hubNames = new Set(hubs.map(table => table.name));
+  const boxes = new Map();
+  const centerY = options.margin + options.boxHeight + options.rowGap;
+
+  hubs.forEach((table, index) => boxes.set(table.name, diagramBox(table, options.margin + index * (options.boxWidth + options.colGap), centerY, options)));
+
+  const leaves = tables.filter(table => !hubNames.has(table.name)).sort((first, second) => primaryTargetIndex(first, hubs, targets) - primaryTargetIndex(second, hubs, targets) || first.name.localeCompare(second.name));
+  const lanes = [
+    {x: options.margin, y: options.margin},
+    {x: options.margin, y: options.margin + (options.boxHeight + options.rowGap) * 2},
+  ];
+
+  leaves.forEach((table, index) => {
+    const lane = lanes[index % lanes.length];
+    boxes.set(table.name, diagramBox(table, lane.x, lane.y, options));
+    lane.x += options.boxWidth + options.colGap;
+  });
+
+  return boxes;
+}
+function diagramBox(table, x, y, options){
+  return {table,shownColumns:diagramColumns(table),x,y,width:options.boxWidth,height:options.boxHeight};
+}
+function primaryTargetIndex(table, hubs, targets){
+  const targetNames = targets.get(table.name) || [];
+  const index = hubs.findIndex(hub => targetNames.includes(hub.name));
+
+  return index === -1 ? hubs.length : index;
 }
 function diagramColumns(table){
   const indexed = new Set(list(table.indexes).flatMap(index => list(index.columns)));
@@ -191,10 +274,11 @@ function diagramColumns(table){
 function drawRelationLine(ctx, from, to){
   if (!from || !to) return;
 
-  const start = {x: from.x + from.width, y: from.y + Math.min(from.height - 18, 72)};
-  const end = {x: to.x, y: to.y + Math.min(to.height - 18, 72)};
+  const fromRight = from.x < to.x;
+  const start = {x: fromRight ? from.x + from.width : from.x, y: from.y + Math.min(from.height - 18, 72)};
+  const end = {x: fromRight ? to.x : to.x + to.width, y: to.y + Math.min(to.height - 18, 72)};
   const midX = start.x + (end.x - start.x) / 2;
-  ctx.strokeStyle = '#344054';
+  ctx.strokeStyle = 'rgba(52,64,84,.72)';
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);
   ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
@@ -224,7 +308,7 @@ function drawTableBox(ctx, box){
     ctx.strokeStyle = '#344054';
     ctx.strokeRect(box.x, y, box.width, 30);
     ctx.fillStyle = column.primary ? '#d6b900' : column.name.endsWith('_id') ? '#98a2b3' : '#172b13';
-    ctx.fillText(column.primary ? 'key' : column.name.endsWith('_id') ? 'fk' : '•', box.x + 10, y + 20);
+    ctx.fillText(column.primary ? 'key' : column.name.endsWith('_id') ? 'fk' : '*', box.x + 10, y + 20);
     ctx.fillStyle = '#172b13';
     ctx.fillText(column.name, box.x + 42, y + 20);
   });
@@ -232,6 +316,42 @@ function drawTableBox(ctx, box){
   ctx.strokeRect(box.x, box.y + box.height - 26, box.width, 26);
   ctx.fillStyle = '#667085';
   ctx.fillText(box.table.columns.length > box.shownColumns.length ? '...' : `${box.shownColumns.length} columns`, box.x + 10, box.y + box.height - 8);
+}
+function makeDiagramDraggable(shell){
+  if (!shell || shell.dataset.draggable === 'true') return;
+
+  shell.dataset.draggable = 'true';
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let scrollLeft = 0;
+  let scrollTop = 0;
+  const stop = event => {
+    dragging = false;
+    shell.classList.remove('dragging');
+    if (shell.hasPointerCapture(event.pointerId)) shell.releasePointerCapture(event.pointerId);
+  };
+
+  shell.addEventListener('pointerdown', event => {
+    dragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    scrollLeft = shell.scrollLeft;
+    scrollTop = shell.scrollTop;
+    shell.classList.add('dragging');
+    shell.setPointerCapture(event.pointerId);
+  });
+  shell.addEventListener('pointermove', event => {
+    if (!dragging) return;
+    shell.scrollLeft = scrollLeft - (event.clientX - startX);
+    shell.scrollTop = scrollTop - (event.clientY - startY);
+  });
+  shell.addEventListener('pointerup', stop);
+  shell.addEventListener('pointercancel', stop);
+  shell.addEventListener('lostpointercapture', () => {
+    dragging = false;
+    shell.classList.remove('dragging');
+  });
 }
 function codeDetail(type){
   return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Cases', type.cases || [], 'case')}${enumDetails(type)}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;

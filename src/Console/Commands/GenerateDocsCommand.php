@@ -47,7 +47,7 @@ class GenerateDocsCommand extends Command
 
             $normalized = [
                 'api' => $this->sectionEnabled('api') ? $apiNormalizer->normalize($rawPath.'/scribe') : ['groups' => []],
-                'database' => $this->sectionEnabled('database') ? $laravelSchema->generate() : ['tables' => [], 'relationships' => []],
+                'database' => $this->sectionEnabled('database') ? $laravelSchema->generate() : ['tables' => [], 'constraints' => [], 'relationships' => []],
                 'code' => $this->sectionEnabled('code') ? $codeNormalizer->normalize($rawPath.'/phpdocumentor') : ['namespaces' => [], 'classes' => []],
             ];
 

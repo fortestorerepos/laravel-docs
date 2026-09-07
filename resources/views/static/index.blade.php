@@ -8,7 +8,7 @@
 </head>
 <body data-active-tab="{{ $activeTab }}">
 <header>
-<div class="brand">Laravel Docs</div>
+<div class="brand-group"><div class="brand">Laravel Docs</div><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">Light</button></div>
 <nav class="tabs" aria-label="Documentation sections">
 <a href="api.html" @class(['active' => $activeTab === 'api'])>API</a>
 <a href="database.html" @class(['active' => $activeTab === 'database'])>DB</a>

@@ -22,6 +22,7 @@ class LaravelSchemaAdapter
         $connection = $this->connection();
         $schema = $connection->getSchemaBuilder();
         $tables = [];
+        $constraints = [];
         $relationships = [];
         $models = $this->modelsByTable();
 
@@ -51,17 +52,30 @@ class LaravelSchemaAdapter
             ];
 
             foreach ($foreignKeys as $foreignKey) {
+                $constraints[] = [
+                    'name' => $foreignKey['name'],
+                    'child_table' => $tableName,
+                    'child_column' => $foreignKey['column'],
+                    'parent_table' => $foreignKey['references_table'],
+                    'parent_column' => $foreignKey['references_column'],
+                    'on_update' => $foreignKey['on_update'],
+                    'on_delete' => $foreignKey['on_delete'],
+                ];
                 $relationships[] = [
+                    'name' => $foreignKey['name'],
                     'from_table' => $tableName,
                     'from_column' => $foreignKey['column'],
                     'to_table' => $foreignKey['references_table'],
                     'to_column' => $foreignKey['references_column'],
+                    'on_update' => $foreignKey['on_update'],
+                    'on_delete' => $foreignKey['on_delete'],
                 ];
             }
         }
 
         return [
             'tables' => $tables,
+            'constraints' => $constraints,
             'relationships' => $relationships,
         ];
     }
@@ -142,19 +156,26 @@ class LaravelSchemaAdapter
     }
 
     /**
-     * @return list<array{name: string, column: string, references_table: string, references_column: string}>
+     * @return list<array{name: string, column: string, references_table: string, references_column: string, on_update: string, on_delete: string}>
      */
     private function foreignKeys(Builder $schema, string $tableName): array
     {
         return array_map(
             fn (array $key): array => [
-                'name' => (string) $key['name'],
+                'name' => (string) ($key['name'] ?? $this->foreignKeyName($tableName, $key['columns'][0] ?? '')),
                 'column' => $key['columns'][0] ?? '',
                 'references_table' => $key['foreign_table'],
                 'references_column' => $key['foreign_columns'][0] ?? '',
+                'on_update' => (string) ($key['on_update'] ?? ''),
+                'on_delete' => (string) ($key['on_delete'] ?? ''),
             ],
             $schema->getForeignKeys($tableName),
         );
+    }
+
+    private function foreignKeyName(string $tableName, string $column): string
+    {
+        return $column === '' ? '' : $tableName.'_'.$column.'_foreign';
     }
 
     /**

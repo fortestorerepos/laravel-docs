@@ -247,7 +247,15 @@ PHP);
             'description' => 'Human-readable asset serial number.',
             'model_type' => 'string',
         ])
+        ->and($normalized['constraints'][0])->toMatchArray([
+            'name' => 'assets_assigned_user_id_foreign',
+            'child_table' => 'assets',
+            'child_column' => 'assigned_user_id',
+            'parent_table' => 'users',
+            'parent_column' => 'id',
+        ])
         ->and($normalized['relationships'][0])->toMatchArray([
+            'name' => 'assets_assigned_user_id_foreign',
             'from_table' => 'assets',
             'from_column' => 'assigned_user_id',
             'to_table' => 'users',
