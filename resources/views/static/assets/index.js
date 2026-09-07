@@ -106,7 +106,7 @@ function withEntryIndexes(entries){return entries.map((entry,index)=>({...entry,
 function typeGroup(type){return ({class:'Classes',interface:'Interfaces',trait:'Traits',enum:'Enums'}[type]||'Types');}
 function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace',method:'Method',property:'Property'}[type]||type||'Type');}
 function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N',method:'M',property:'P'}[type]||'C');}
-function typeBadge(type){const label=typeLabel(type);return `<span class="type-badge" title="${esc(label)}" aria-label="${esc(label)}">${typeIcon(type)}</span>`;}
+function typeBadge(type){const label=typeLabel(type);return `<span class="type-badge type-badge-${esc(type || 'type')}" title="${esc(label)}" aria-label="${esc(label)}">${typeIcon(type)}</span>`;}
 function apiDetail(endpoint){
   return `<h1>${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">${esc(endpoint.method)}</span> <span class="uri">${esc(endpoint.uri)}</span></p><p>${esc(endpoint.description || '')}</p><p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>${block(endpoint.parameters)}<h2>Request Body</h2>${block(endpoint.body)}<h2>Responses</h2>${block(endpoint.responses)}`;
 }
