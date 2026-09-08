@@ -16,12 +16,11 @@ concurrency:
 
 jobs:
   tests:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, windows-latest]
         php: [8.3, 8.4, 8.5]
         laravel: [12.*, 13.*]
         stability: [prefer-lowest, prefer-stable]
@@ -31,7 +30,7 @@ jobs:
           - laravel: 13.*
             testbench: 11.*
 
-    name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }} - ${{ matrix.os }}
+    name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }}
 
     steps:
       - name: Checkout code
@@ -59,13 +58,7 @@ jobs:
         run: composer lint:check
 
       - name: Type Coverage
-        if: runner.os != 'Windows'
         run: composer test:types
 
       - name: Test Suite
-        if: runner.os != 'Windows'
         run: composer test:unit
-
-      - name: Test Suite (Windows)
-        if: runner.os == 'Windows'
-        run: vendor/bin/pest
