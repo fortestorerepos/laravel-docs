@@ -32,6 +32,90 @@ it('normalizes openapi groups from tags', function () {
         ->and($normalized['groups'][0]['endpoints'][0]['uri'])->toBe('/api/users');
 });
 
+it('reads requests inside nested Scribe folders without turning folders into endpoints', function () {
+    $files = app(Filesystem::class);
+    $path = sys_get_temp_dir().'/laravel-docs-scribe-folders-'.uniqid();
+    $files->ensureDirectoryExists($path);
+    $request = [
+        'name' => 'Obter excel prePedido',
+        'request' => [
+            'method' => 'GET',
+            'url' => [
+                'raw' => '{{baseUrl}}/api/compras/pedidos/:prepedido_id/export',
+                'variable' => [['key' => 'prepedido_id', 'value' => 16, 'description' => 'The ID of the prepedido.']],
+                'query' => [['key' => 'download', 'value' => '1']],
+            ],
+            'header' => [['key' => 'Accept', 'value' => 'application/json']],
+        ],
+        'response' => [['code' => 401, 'header' => [['key' => 'content-type', 'value' => 'application/json']], 'body' => '{"message":"Unauthorized"}']],
+    ];
+    $sage = $request;
+    $sage['name'] = 'Obter excel SAGE';
+    $sage['request']['url']['raw'] .= '/sage';
+    $files->put($path.'/collection.json', json_encode([
+        'auth' => ['type' => 'bearer'],
+        'item' => [
+            ['name' => 'Integracoes', 'item' => [
+                ['name' => 'Compras', 'item' => [$request, $sage]],
+                ['name' => 'Empty', 'item' => []],
+            ]],
+            ['name' => 'Health', 'request' => ['method' => 'GET', 'url' => '/api/health', 'auth' => ['type' => 'noauth']]],
+        ],
+    ]));
+
+    try {
+        $groups = app(ApiNormalizer::class)->normalize($path)['groups'];
+        expect(array_column($groups, 'name'))->toBe(['Integracoes / Compras', 'API'])
+            ->and($groups[0]['endpoints'])->toHaveCount(2)
+            ->and($groups[0]['endpoints'][0])->toMatchArray([
+                'name' => 'Obter excel prePedido', 'method' => 'GET',
+                'uri' => '/api/compras/pedidos/{prepedido_id}/export', 'authenticated' => true,
+                'headers' => ['Accept' => 'application/json', 'Authorization' => 'Bearer {YOUR_BEARER_TOKEN}'],
+            ])
+            ->and($groups[0]['endpoints'][0]['parameters'][0])->toMatchArray(['name' => 'prepedido_id', 'in' => 'path', 'example' => 16])
+            ->and($groups[0]['endpoints'][0]['parameters'][1])->toMatchArray(['name' => 'download', 'in' => 'query'])
+            ->and($groups[0]['endpoints'][0]['responses'][0])->toMatchArray(['status' => 401, 'headers' => ['content-type' => 'application/json'], 'body' => '{"message":"Unauthorized"}'])
+            ->and($groups[0]['endpoints'][1]['uri'])->toBe('/api/compras/pedidos/{prepedido_id}/export/sage')
+            ->and($groups[1]['endpoints'][0]['authenticated'])->toBeFalse()
+            ->and($groups[1]['endpoints'][0]['uri'])->toBe('/api/health');
+    } finally {
+        $files->deleteDirectory($path);
+    }
+});
+
+it('enriches Scribe body parameters with OpenAPI types and required fields', function () {
+    $files = app(Filesystem::class);
+    $path = sys_get_temp_dir().'/laravel-docs-body-schema-'.uniqid();
+    $files->ensureDirectoryExists($path);
+    $files->put($path.'/collection.json', json_encode(['item' => [
+        ['name' => 'Generate AT', 'request' => ['method' => 'POST', 'url' => '{{baseUrl}}/api/documento/venda/gerar-at']],
+    ]]));
+    $files->put($path.'/openapi.yaml', <<<'YAML'
+openapi: 3.0.3
+paths:
+  /api/documento/venda/gerar-at:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transSerial]
+              properties:
+                transSerial: {type: string, example: architecto}
+                chave: {type: string, example: architecto}
+YAML);
+
+    try {
+        $endpoint = app(ApiNormalizer::class)->normalize($path)['groups'][0]['endpoints'][0];
+        $schema = $endpoint['body_schema']['content']['application/json']['schema'];
+        expect($schema['required'])->toBe(['transSerial'])
+            ->and($schema['properties']['chave'])->toBe(['type' => 'string', 'example' => 'architecto']);
+    } finally {
+        $files->deleteDirectory($path);
+    }
+});
+
 it('normalizes phpdocumentor child element names and return tags', function () {
     $files = app(Filesystem::class);
     $path = sys_get_temp_dir().'/laravel-docs-code-'.uniqid();

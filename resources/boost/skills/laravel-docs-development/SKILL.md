@@ -76,6 +76,13 @@ storage/app/laravel-docs/generated/index.html
 Use this only to view the final static site; it does not require a running Laravel application.
 The generated pages are rendered from package Blade views before they are written as static HTML. Section pages are available at `api.html`, `database.html`, and `code.html`, with shared `assets/index.css` and `assets/index.js`.
 Use the generated header's Download PDF button to export the currently opened section: API endpoints, database diagrams/tables/constraints, or PHP code documentation.
+The API page uses a Scribe-like request layout with color-coded HTTP methods, a Try it out panel, copyable curl examples, and a sidebar that can show Scribe endpoint groups or regroup requests by HTTP method.
+
+Nested Scribe folders appear under their full group path, such as `Integracoes / Compras`, with their actual requests. Collection imports preserve URL examples, inherited authentication, request headers, and response status codes and headers.
+
+Keep Scribe's companion OpenAPI file with its collection to include body field types and required/optional metadata. Header and body inputs appear after **Try it out** is clicked, and their values update curl examples and outgoing requests.
+
+Base URL and Authorization values persist in browser local storage for the documentation directory across endpoint changes and reloads. Clearing an input clears its saved value.
 In the database diagram, drag tables to rearrange them, drag empty space to pan, and use the mouse wheel to zoom. Positions are saved in the browser per schema. Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Rules, References, and Templates

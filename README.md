@@ -133,6 +133,13 @@ storage/app/laravel-docs/
 The UI is a compact static HTML page with `API`, `DB`, and `Code` tabs in the header.
 Its source lives in package Blade views and assets under `resources/views/static`, so the generated frontend can be customized without editing PHP generator strings.
 The header also includes a Download PDF action that exports the currently opened section.
+The API page uses a Scribe-like request layout with color-coded HTTP methods, a Try it out panel, copyable curl examples, and a sidebar that can show endpoint groups from Scribe or regroup the same requests by HTTP method.
+
+Nested Scribe folders are included using their full group path (for example, `Integracoes / Compras`). Postman collection imports preserve URL parameter examples, inherited authentication, request headers, and response status codes and headers.
+
+Headers and body parameters display examples before trying a request. Click **Try it out** to edit their values; edits update the curl example and outgoing request. The companion Scribe OpenAPI file supplies body parameter types and required/optional metadata.
+
+Base URL and Authorization inputs are saved in browser local storage for this documentation directory and restored across endpoints and reloads. Clear either input to clear its saved value.
 The database diagram places related tables across a pannable, zoomable canvas and routes connections around cards. Drag a table to rearrange it, drag empty space to pan, and use the mouse wheel to zoom. Table positions are saved in your browser for that schema; Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Changelog

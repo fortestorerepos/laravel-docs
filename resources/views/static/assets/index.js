@@ -5,11 +5,13 @@ const activeTab = document.body.dataset.activeTab || 'api';
 const themeToggle = document.getElementById('theme-toggle');
 const pdfButton = document.getElementById('pdf-download');
 let state = {
+  apiGroupBy: localStorage.getItem('laravel-docs-api-group-by') || 'endpoints',
   codeGroupBy: localStorage.getItem('laravel-docs-code-group-by') || 'namespaces',
   theme: localStorage.getItem('laravel-docs-theme') || 'light',
   selected: 0,
   tab: ['api','database','code'].includes(activeTab) ? activeTab : 'api',
 };
+if (!['endpoints','requests'].includes(state.apiGroupBy)) state.apiGroupBy = 'endpoints';
 if (!['namespaces','types'].includes(state.codeGroupBy)) state.codeGroupBy = 'namespaces';
 if (!['light','dark'].includes(state.theme)) state.theme = 'light';
 const sidebar = document.getElementById('sidebar');
@@ -23,6 +25,7 @@ const memberId = (kind, name) => `${kind}_${String(name || '').replace(/[^a-zA-Z
 const basename = path => String(path || '').split(/[\\/]/).pop();
 const diagramView = {scale: Number(localStorage.getItem('laravel-docs-database-diagram-scale') || '1'), offsetX: 0, offsetY: 0, initialized: false};
 function activate(index){state.selected=index;render();}
+function methodClass(method){return `method method-${esc(String(method || 'get').toLowerCase())}`;}
 function applyTheme(){
   document.documentElement.dataset.theme = state.theme;
   if (themeToggle) themeToggle.textContent = state.theme === 'dark' ? 'Dark' : 'Light';
@@ -55,16 +58,26 @@ function render(){renderSidebar();renderContent();}
 function renderSidebar(){
   const entries = entriesFor(state.tab);
   if (!entries.length){sidebar.innerHTML=`<div class="empty">No ${labels[state.tab]} documentation found.</div>`;return;}
-  if (state.tab === 'code' || state.tab === 'database') { renderGroupedSidebar(entries, state.tab); return; }
+  if (state.tab === 'api' || state.tab === 'code' || state.tab === 'database') { renderGroupedSidebar(entries, state.tab); return; }
   sidebar.innerHTML = entries.map((entry,index)=>`<div class="group">${entry.group?`<h2>${esc(entry.group)}</h2>`:''}<button class="item ${index===state.selected?'active':''}" onclick="activate(${index})">${entry.sidebar}</button></div>`).join('');
 }
 function renderGroupedSidebar(entries, tab){
   entries = entries.map((entry,index)=>({...entry,index: entry.index ?? index}));
   const standalone = entries.filter(entry => entry.group === null);
   const grouped = entries.filter(entry => entry.group !== null);
-  const switcher = tab === 'code' ? codeSidebarSwitcher() : '';
+  const switcher = tab === 'api' ? apiSidebarSwitcher() : tab === 'code' ? codeSidebarSwitcher() : '';
   const pages = standalone.map(entry => `<button class="item top-item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('');
   sidebar.innerHTML = switcher + pages + sidebarGroups(grouped).map(group => `<details class="namespace-group" ${group.open ? 'open' : ''}><summary>${group.badge ? typeBadge(group.badge) : ''}<span class="mono">${esc(group.name)}</span></summary><div class="namespace-items">${group.entries.map(entry => `<button class="item ${entry.index===state.selected?'active':''}" onclick="activate(${entry.index})">${entry.sidebar}</button>`).join('')}</div></details>`).join('');
+}
+function apiSidebarSwitcher(){
+  return `<div class="sidebar-switcher" aria-label="API sidebar grouping"><button type="button" class="${state.apiGroupBy === 'endpoints' ? 'active' : ''}" onclick="setApiGroupBy('endpoints')">Endpoints</button><button type="button" class="${state.apiGroupBy === 'requests' ? 'active' : ''}" onclick="setApiGroupBy('requests')">Requests</button></div>`;
+}
+function setApiGroupBy(groupBy){
+  if (!['endpoints','requests'].includes(groupBy)) return;
+  state.apiGroupBy = groupBy;
+  state.selected = 0;
+  localStorage.setItem('laravel-docs-api-group-by', groupBy);
+  render();
 }
 function codeSidebarSwitcher(){
   return `<div class="sidebar-switcher" aria-label="Code sidebar grouping"><button type="button" class="${state.codeGroupBy === 'namespaces' ? 'active' : ''}" onclick="setCodeGroupBy('namespaces')">Namespaces</button><button type="button" class="${state.codeGroupBy === 'types' ? 'active' : ''}" onclick="setCodeGroupBy('types')">Types</button></div>`;
@@ -91,11 +104,12 @@ function renderContent(){
   const entries = entriesFor(state.tab);
   if (!entries.length){content.innerHTML=`<div class="empty">Run docs:generate after configuring the ${labels[state.tab]} documentation source.</div>`;return;}
   const item = entries[Math.min(state.selected, entries.length - 1)].item;
+  content.classList?.toggle('api-detail', state.tab === 'api');
   content.innerHTML = state.tab === 'api' ? apiDetail(item) : state.tab === 'database' ? dbContent(item) : codeDetail(item);
   if (item.kind === 'database-relations-diagram') requestAnimationFrame(() => drawDatabaseDiagram());
 }
 function entriesFor(tab){
-  if (tab === 'api') return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => ({group:group.name,item:endpoint,sidebar:`<div class="line"><span class="method">${esc(endpoint.method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`})));
+  if (tab === 'api') return apiEntries();
   if (tab === 'database') return withEntryIndexes(databaseDiagramEntries().concat(databaseConstraintEntries(), databaseRelationEntries(), (docs.database.tables||[]).map(table => ({group:'Tables',item:table,sidebar:`<span class="mono">${esc(table.name)}</span>${table.model ? `<span class="muted">: ${esc(table.model)}</span>` : ''}<div class="muted">${(table.columns||[]).length} columns</div>`}))));
   return (docs.code.classes||[]).map(type => {
     const group = state.codeGroupBy === 'types' ? typeGroup(type.type) : type.namespace || 'Global';
@@ -104,13 +118,209 @@ function entriesFor(tab){
     return {group,groupType,item:type,sidebar:`<div class="type-row">${typeBadge(type.type)}<span><span class="mono">${esc(type.name)}</span><div class="muted">${esc(typeLabel(type.type))}</div></span></div>`};
   });
 }
+function apiEntries(){
+  return (docs.api.groups||[]).flatMap(group => (group.endpoints||[]).map(endpoint => {
+    const method = String(endpoint.method || 'GET').toUpperCase();
+
+    return {group: state.apiGroupBy === 'requests' ? method : group.name || 'Endpoints',item:endpoint,sidebar:`<div class="line"><span class="${methodClass(method)}">${esc(method)}</span><span class="uri">${esc(endpoint.uri)}</span></div><div class="muted">${esc(endpoint.name||'Untitled endpoint')}</div>`};
+  }));
+}
 function withEntryIndexes(entries){return entries.map((entry,index)=>({...entry,index}));}
 function typeGroup(type){return ({class:'Classes',interface:'Interfaces',trait:'Traits',enum:'Enums'}[type]||'Types');}
 function typeLabel(type){return ({class:'Class',interface:'Interface',trait:'Trait',enum:'Enum',namespace:'Namespace',method:'Method',property:'Property'}[type]||type||'Type');}
 function typeIcon(type){return ({class:'C',interface:'I',trait:'T',enum:'E',namespace:'N',method:'M',property:'P'}[type]||'C');}
 function typeBadge(type){const label=typeLabel(type);return `<span class="type-badge type-badge-${esc(type || 'type')}" title="${esc(label)}" aria-label="${esc(label)}">${typeIcon(type)}</span>`;}
 function apiDetail(endpoint){
-  return `<h1>${esc(endpoint.name || endpoint.uri)}</h1><p><span class="method">${esc(endpoint.method)}</span> <span class="uri">${esc(endpoint.uri)}</span></p><p>${esc(endpoint.description || '')}</p><p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><h2>Request Parameters</h2>${block(endpoint.parameters)}<h2>Request Body</h2>${block(endpoint.body)}<h2>Responses</h2>${block(endpoint.responses)}`;
+  const method = String(endpoint.method || 'GET').toUpperCase();
+  const response = apiFirstResponse(endpoint.responses);
+  const curl = apiCurlCommand(endpoint);
+  const bodyText = apiBodyPayload(endpoint.body);
+  const tryBody = method === 'GET' || method === 'HEAD' || apiBodyParameters(endpoint).length ? '' : `<label>Body<textarea class="api-try-body" spellcheck="false">${esc(bodyText)}</textarea></label>`;
+  const headerFields = `<section class="api-headers"><h2>Headers</h2>${Object.entries(apiRequestHeaders(endpoint)).map(([name, example]) => `<label><strong class="mono">${esc(name)}</strong><input type="text" data-api-header="${esc(name)}" value="${esc(name.toLowerCase() === 'authorization' ? apiSavedSetting('authorization') || '' : example)}" placeholder="${esc(example)}" autocomplete="off" spellcheck="false" oninput="updateApiCurl(this)"><span class="muted">Example: <code>${esc(example)}</code></span></label>`).join('')}</section>`;
+
+  return `<div class="api-page"><section class="api-request-panel"><h1>${esc(endpoint.name || endpoint.uri)}</h1>${endpoint.description ? `<p class="lead">${esc(endpoint.description)}</p>` : ''}<p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><div class="api-request-heading"><h2>Request</h2><button type="button" class="try-button" onclick="toggleApiTryout(this)">Try it out</button></div><div class="api-route"><span class="${methodClass(method)}">${esc(method)}</span><span class="uri">${esc(endpoint.uri)}</span></div>${headerFields}<div class="api-tryout" hidden><label>Base URL<input class="api-base-url" type="url" oninput="saveApiSetting(\'base-url\', this.value); updateApiCurl(this)" value="${esc(apiDefaultBaseUrl())}" placeholder="https://example.com"></label>${tryBody}<button type="button" class="api-send-button" onclick="runApiTryout(this)">Send Request</button><pre class="api-try-result">Ready.</pre></div><h2>Request Parameters</h2>${block(endpoint.parameters)}${apiBodyFields(endpoint)}</section><aside class="api-example-panel"><div class="code-tabs"><button type="button" class="active">bash</button></div><div class="code-block-title"><h2>Example request:</h2><button type="button" class="copy-button" onclick="copyApiExample(this)">Copy</button></div><pre class="code-sample language-bash">${esc(curl)}</pre><h2>Example response (${esc(response.status)}):</h2>${apiResponseHeaders(response)}<pre class="code-sample">${esc(apiResponseBody(response))}</pre></aside></div>`;
+}
+function apiRequestHeaders(endpoint){
+  const headers = {Authorization: 'Bearer {YOUR_BEARER_TOKEN}', 'Content-Type': 'application/json', Accept: 'application/json'};
+  for (const [name, value] of Object.entries(endpoint.headers || {})) {
+    const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase()) || name;
+    headers[key] = value;
+  }
+  return headers;
+}
+function apiBodyParameters(endpoint){
+  const content = (endpoint.body_schema || endpoint.body)?.content;
+  const media = content?.['application/json'] || Object.values(content || {})[0];
+  const schema = media?.schema;
+  if (schema?.properties) return Object.entries(schema.properties).map(([name, field]) => ({name, type: field.type || 'string', required: (schema.required || []).includes(name), description: field.description || '', example: field.example ?? field.default ?? (field.type === 'object' ? {} : field.type === 'array' ? [] : '')}));
+  try {
+    const payload = JSON.parse(apiBodyPayload(endpoint.body));
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) return Object.entries(payload).map(([name, value]) => ({name, type: Array.isArray(value) ? 'array' : value === null ? 'string' : typeof value, example: value}));
+  } catch {}
+  return [];
+}
+function apiBodyFields(endpoint){
+  const parameters = apiBodyParameters(endpoint);
+  if (!parameters.length) return `<h2>Request Body</h2>${block(endpoint.body)}`;
+  return `<section class="api-body-fields"><h2>Body Parameters</h2>${parameters.map(field => {
+    const example = typeof field.example === 'object' ? JSON.stringify(field.example) : String(field.example);
+    const attributes = `data-api-body="${esc(field.name)}" data-type="${esc(field.type)}" ${field.required ? 'required' : ''} oninput="updateApiCurl(this)"`;
+    const control = field.type === 'boolean' ? `<select ${attributes}><option value="true" ${field.example === true ? 'selected' : ''}>true</option><option value="false" ${field.example !== true ? 'selected' : ''}>false</option></select>` : field.type === 'object' || field.type === 'array' ? `<textarea ${attributes} spellcheck="false">${esc(example)}</textarea>` : `<input ${attributes} type="${field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}" ${field.type === 'integer' ? 'step="1"' : 'step="any"'} value="${esc(example)}">`;
+    return `<label><span><strong class="mono">${esc(field.name)}</strong> <span class="muted">${esc(field.type)}</span>${field.required === false ? ' <em class="muted">optional</em>' : ''}</span>${field.description ? `<span>${esc(field.description)}</span>` : ''}${control}<span class="muted">Example: <code>${esc(example)}</code></span></label>`;
+  }).join('')}</section>`;
+}
+function apiEnteredBody(panel){
+  const inputs = Array.from(panel.querySelectorAll('[data-api-body]'));
+  if (!inputs.length) return undefined;
+  return Object.fromEntries(inputs.filter(input => input.required || input.value !== '').map(input => {
+    let value = input.value;
+    if (['array', 'object', 'boolean', 'integer', 'number'].includes(input.dataset.type)) value = JSON.parse(value);
+    return [input.dataset.apiBody, value];
+  }));
+}
+function apiEnteredHeaders(panel){
+  return Object.fromEntries(Array.from(panel.querySelectorAll('[data-api-header]')).filter(input => input.value.trim()).map(input => [input.dataset.apiHeader, input.value.trim()]));
+}
+function updateApiCurl(input){
+  if (input.dataset.apiHeader?.toLowerCase() === 'authorization') saveApiSetting('authorization', input.value);
+  const page = input.closest('.api-page');
+  const endpoint = entriesFor('api')[state.selected]?.item || {};
+  try {
+    const body = apiEnteredBody(page);
+    page.querySelector('.language-bash').textContent = apiCurlCommand(body === undefined ? endpoint : {...endpoint, body}, apiEnteredHeaders(page));
+    input.setCustomValidity('');
+  } catch {
+    input.setCustomValidity('Enter a valid ' + input.dataset.type + ' value.');
+  }
+}
+function apiSettingKey(name){
+  return `laravel-docs-api:${window.location.pathname?.replace(/[^/]*$/, '') || '/'}:${name}`;
+}
+function apiSavedSetting(name){
+  try { return localStorage.getItem(apiSettingKey(name)); } catch { return null; }
+}
+function saveApiSetting(name, value){
+  try { localStorage.setItem(apiSettingKey(name), value); } catch {}
+}
+function apiDefaultBaseUrl(){
+  return apiSavedSetting('base-url') ?? (window.location.protocol === 'http:' || window.location.protocol === 'https:' ? window.location.origin : '');
+}
+function apiCurlCommand(endpoint, requestHeaders){
+  const method = String(endpoint.method || 'GET').toUpperCase();
+  const uri = apiExampleUri(endpoint);
+  const body = apiBodyPayload(endpoint.body);
+  const url = /^https?:\/\//i.test(uri) ? uri : (apiDefaultBaseUrl().replace(/\/+$/, '') || '{{baseUrl}}') + uri;
+  const headers = requestHeaders ?? {...apiRequestHeaders(endpoint), Authorization: apiSavedSetting('authorization') ?? apiRequestHeaders(endpoint).Authorization};
+  const lines = [
+    `curl --request ${method} \\`,
+    `  --url "${url}" \\`,
+    ...Object.entries(headers).filter(([, value]) => value.trim()).map(([name, value]) => `  --header "${`${name}: ${value}`.replace(/[\\"$`]/g, '\\$&')}" \\`),
+  ];
+  lines[lines.length - 1] = lines[lines.length - 1].slice(0, -2);
+  if (body && method !== 'GET' && method !== 'HEAD') {
+    lines[lines.length - 1] += ' \\';
+    lines.push(`  --data '${body.replaceAll("'", "'\\''")}'`);
+  }
+
+  return lines.join('\n');
+}
+function apiExampleUri(endpoint){
+  let uri = String(endpoint.uri || '').replace(/^\{\{baseUrl\}\}/, '');
+  const parameters = Array.isArray(endpoint.parameters) ? endpoint.parameters : [];
+  if (!/^https?:\/\//i.test(uri)) uri = '/' + uri.replace(/^\/+/, '');
+  for (const parameter of parameters) {
+    if (parameter.in === 'path' && parameter.example !== undefined) {
+      uri = uri.replaceAll(`{${parameter.name}}`, encodeURIComponent(String(parameter.example)));
+    }
+  }
+  const query = parameters.filter(parameter => parameter.in === 'query' && parameter.example !== undefined);
+  if (query.length && !uri.includes('?')) uri += '?' + query.map(parameter => `${encodeURIComponent(parameter.name)}=${encodeURIComponent(String(parameter.example))}`).join('&');
+  return uri;
+}
+function apiBodyPayload(body){
+  if (!body || (Array.isArray(body) && body.length === 0)) return '';
+  if (typeof body === 'string') return body;
+  if (body.mode === 'raw') return body.raw || '';
+  if (body.content && typeof body.content === 'object') {
+    const json = body.content['application/json'] || Object.values(body.content)[0];
+    const schema = json?.example || json?.examples || json?.schema || json;
+
+    return JSON.stringify(schema, null, 2);
+  }
+
+  return JSON.stringify(body, null, 2);
+}
+function apiFirstResponse(responses){
+  const entries = Array.isArray(responses) ? responses.map((response, index) => [response.status || response.statusCode || (index === 0 ? '200' : String(index)), response]) : Object.entries(responses || {});
+  const [status, response] = entries[0] || ['200', {}];
+
+  return {status, response: response || {}};
+}
+function apiResponseBody(example){
+  const response = example.response;
+  if (typeof response === 'string') return response;
+  if (response.content && typeof response.content === 'object') {
+    const json = response.content['application/json'] || Object.values(response.content)[0];
+    const payload = json?.example || json?.examples || json?.schema || json;
+
+    return JSON.stringify(payload, null, 2);
+  }
+  if ('body' in response) return typeof response.body === 'string' ? response.body : JSON.stringify(response.body, null, 2);
+  if ('description' in response) return JSON.stringify({description: response.description}, null, 2);
+
+  return JSON.stringify(response, null, 2);
+}
+function apiResponseHeaders(example){
+  const headers = example.response?.headers;
+  if (!headers || !Object.keys(headers).length) return '';
+
+  return `<details class="api-response-headers"><summary>Show headers</summary>${block(headers)}</details>`;
+}
+function toggleApiTryout(button){
+  const panel = button.closest('.api-request-panel')?.querySelector('.api-tryout');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  button.closest('.api-request-panel').classList.toggle('is-trying', !panel.hidden);
+  button.classList.toggle('active', !panel.hidden);
+}
+async function copyApiExample(button){
+  const code = button.closest('.api-example-panel')?.querySelector('.code-sample')?.textContent || '';
+  try {
+    await navigator.clipboard.writeText(code);
+    button.textContent = 'Copied';
+    setTimeout(() => button.textContent = 'Copy', 1200);
+  } catch {
+    button.textContent = 'Copy failed';
+    setTimeout(() => button.textContent = 'Copy', 1200);
+  }
+}
+async function runApiTryout(button){
+  const endpoint = entriesFor('api')[state.selected]?.item || {};
+  const panel = button.closest('.api-tryout');
+  const result = panel?.querySelector('.api-try-result');
+  const base = panel?.querySelector('.api-base-url')?.value.replace(/\/+$/, '');
+  const uri = apiExampleUri(endpoint);
+  const method = String(endpoint.method || 'GET').toUpperCase();
+  if (!panel || !result) return;
+  if (!base) {
+    result.textContent = 'Enter a base URL first.';
+    return;
+  }
+  result.textContent = 'Sending...';
+  try {
+    const options = {method, headers: apiEnteredHeaders(button.closest('.api-request-panel'))};
+    const requestPanel = button.closest('.api-request-panel');
+    const invalid = Array.from(requestPanel.querySelectorAll('input, textarea, select')).find(input => !input.checkValidity());
+    if (invalid) { invalid.reportValidity(); result.textContent = 'Check the request fields.'; return; }
+    const enteredBody = apiEnteredBody(requestPanel);
+    const body = enteredBody === undefined ? panel.querySelector('.api-try-body')?.value.trim() : JSON.stringify(enteredBody);
+    if (body && method !== 'GET' && method !== 'HEAD') options.body = body;
+    const response = await fetch(/^https?:\/\//i.test(uri) ? uri : base + uri, options);
+    const text = await response.text();
+    result.textContent = `${response.status} ${response.statusText}\n\n${text}`;
+  } catch (error) {
+    result.textContent = error?.message || String(error);
+  }
 }
 function dbContent(item){
   if (item.kind === 'database-relations-diagram') return dbRelationsDiagram();
