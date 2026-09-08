@@ -160,7 +160,7 @@ Please review [our security policy](.github/SECURITY.md) on how to report securi
 
 ## Credits
 
-- [Fab. Magalhaes](https://github.com/fab-magalhaes)
+- [Fab. Magalhaes](https://github.com/mackgame4)
 - [All Contributors](../../contributors)
 
 ## License
