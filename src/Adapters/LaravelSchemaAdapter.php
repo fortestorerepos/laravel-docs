@@ -160,17 +160,17 @@ class LaravelSchemaAdapter
      */
     private function foreignKeys(Builder $schema, string $tableName): array
     {
-        return array_values(array_map(
+        return array_map(
             fn (array $key): array => [
                 'name' => (string) ($key['name'] ?? $this->foreignKeyName($tableName, $key['columns'][0] ?? '')),
                 'column' => $this->stringValue($key['columns'][0] ?? ''),
-                'references_table' => $this->stringValue($key['foreign_table'] ?? ''),
+                'references_table' => $key['foreign_table'],
                 'references_column' => $this->stringValue($key['foreign_columns'][0] ?? ''),
                 'on_update' => (string) ($key['on_update'] ?? ''),
                 'on_delete' => (string) ($key['on_delete'] ?? ''),
             ],
             $schema->getForeignKeys($tableName),
-        ));
+        );
     }
 
     private function foreignKeyName(string $tableName, string $column): string
