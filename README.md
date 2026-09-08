@@ -140,6 +140,8 @@ Nested Scribe folders are included using their full group path (for example, `In
 Headers and body parameters display examples before trying a request. Click **Try it out** to edit their values; edits update the curl example and outgoing request. The companion Scribe OpenAPI file supplies body parameter types and required/optional metadata.
 
 Base URL and Authorization inputs are saved in browser local storage for this documentation directory and restored across endpoints and reloads. Clear either input to clear its saved value.
+
+The console's **Example body:** section displays the raw request body, formats JSON for readability, and updates as body inputs change.
 The database diagram places related tables across a pannable, zoomable canvas and routes connections around cards. Drag a table to rearrange it, drag empty space to pan, and use the mouse wheel to zoom. Table positions are saved in your browser for that schema; Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Changelog

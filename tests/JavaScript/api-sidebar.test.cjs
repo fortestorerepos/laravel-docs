@@ -84,6 +84,8 @@ test('API detail renders a Scribe-like tryout and copyable curl example', () => 
   assert.match(elements.content.innerHTML, /--data/);
   assert.match(elements.content.innerHTML, /Copy/);
   assert.match(elements.content.innerHTML, /Example response \(200\):/);
+  assert.match(elements.content.innerHTML, /Example body:<\/h2><pre class="code-sample api-example-body">/);
+  assert.match(elements.content.innerHTML, /&quot;ids&quot;: \[/);
   assert.match(elements.content.innerHTML, /&quot;sent&quot;: true/);
 });
 

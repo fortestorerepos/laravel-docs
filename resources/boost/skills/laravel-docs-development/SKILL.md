@@ -83,6 +83,8 @@ Nested Scribe folders appear under their full group path, such as `Integracoes /
 Keep Scribe's companion OpenAPI file with its collection to include body field types and required/optional metadata. Header and body inputs appear after **Try it out** is clicked, and their values update curl examples and outgoing requests.
 
 Base URL and Authorization values persist in browser local storage for the documentation directory across endpoint changes and reloads. Clearing an input clears its saved value.
+
+The console includes an **Example body:** section with the raw request body (formatted for JSON), updated when body inputs change.
 In the database diagram, drag tables to rearrange them, drag empty space to pan, and use the mouse wheel to zoom. Positions are saved in the browser per schema. Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Rules, References, and Templates

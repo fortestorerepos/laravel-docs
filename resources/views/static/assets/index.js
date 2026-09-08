@@ -135,10 +135,10 @@ function apiDetail(endpoint){
   const response = apiFirstResponse(endpoint.responses);
   const curl = apiCurlCommand(endpoint);
   const bodyText = apiBodyPayload(endpoint.body);
-  const tryBody = method === 'GET' || method === 'HEAD' || apiBodyParameters(endpoint).length ? '' : `<label>Body<textarea class="api-try-body" spellcheck="false">${esc(bodyText)}</textarea></label>`;
+  const tryBody = method === 'GET' || method === 'HEAD' || apiBodyParameters(endpoint).length ? '' : `<label>Body<textarea class="api-try-body" spellcheck="false" oninput="updateApiCurl(this)">${esc(bodyText)}</textarea></label>`;
   const headerFields = `<section class="api-headers"><h2>Headers</h2>${Object.entries(apiRequestHeaders(endpoint)).map(([name, example]) => `<label><strong class="mono">${esc(name)}</strong><input type="text" data-api-header="${esc(name)}" value="${esc(name.toLowerCase() === 'authorization' ? apiSavedSetting('authorization') || '' : example)}" placeholder="${esc(example)}" autocomplete="off" spellcheck="false" oninput="updateApiCurl(this)"><span class="muted">Example: <code>${esc(example)}</code></span></label>`).join('')}</section>`;
 
-  return `<div class="api-page"><section class="api-request-panel"><h1>${esc(endpoint.name || endpoint.uri)}</h1>${endpoint.description ? `<p class="lead">${esc(endpoint.description)}</p>` : ''}<p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><div class="api-request-heading"><h2>Request</h2><button type="button" class="try-button" onclick="toggleApiTryout(this)">Try it out</button></div><div class="api-route"><span class="${methodClass(method)}">${esc(method)}</span><span class="uri">${esc(endpoint.uri)}</span></div>${headerFields}<div class="api-tryout" hidden><label>Base URL<input class="api-base-url" type="url" oninput="saveApiSetting(\'base-url\', this.value); updateApiCurl(this)" value="${esc(apiDefaultBaseUrl())}" placeholder="https://example.com"></label>${tryBody}<button type="button" class="api-send-button" onclick="runApiTryout(this)">Send Request</button><pre class="api-try-result">Ready.</pre></div><h2>Request Parameters</h2>${block(endpoint.parameters)}${apiBodyFields(endpoint)}</section><aside class="api-example-panel"><div class="code-tabs"><button type="button" class="active">bash</button></div><div class="code-block-title"><h2>Example request:</h2><button type="button" class="copy-button" onclick="copyApiExample(this)">Copy</button></div><pre class="code-sample language-bash">${esc(curl)}</pre><h2>Example response (${esc(response.status)}):</h2>${apiResponseHeaders(response)}<pre class="code-sample">${esc(apiResponseBody(response))}</pre></aside></div>`;
+  return `<div class="api-page"><section class="api-request-panel"><h1>${esc(endpoint.name || endpoint.uri)}</h1>${endpoint.description ? `<p class="lead">${esc(endpoint.description)}</p>` : ''}<p class="muted">Controller: ${esc(endpoint.controller || 'Not available')} &middot; Auth: ${endpoint.authenticated ? 'Required' : 'Not specified'}</p><div class="api-request-heading"><h2>Request</h2><button type="button" class="try-button" onclick="toggleApiTryout(this)">Try it out</button></div><div class="api-route"><span class="${methodClass(method)}">${esc(method)}</span><span class="uri">${esc(endpoint.uri)}</span></div>${headerFields}<div class="api-tryout" hidden><label>Base URL<input class="api-base-url" type="url" oninput="saveApiSetting(\'base-url\', this.value); updateApiCurl(this)" value="${esc(apiDefaultBaseUrl())}" placeholder="https://example.com"></label>${tryBody}<button type="button" class="api-send-button" onclick="runApiTryout(this)">Send Request</button><pre class="api-try-result">Ready.</pre></div><h2>Request Parameters</h2>${block(endpoint.parameters)}${apiBodyFields(endpoint)}</section><aside class="api-example-panel"><div class="code-tabs"><button type="button" class="active">bash</button></div><div class="code-block-title"><h2>Example request:</h2><button type="button" class="copy-button" onclick="copyApiExample(this)">Copy</button></div><pre class="code-sample language-bash">${esc(curl)}</pre><h2>Example body:</h2><pre class="code-sample api-example-body">${esc(apiFormatBody(bodyText))}</pre><h2>Example response (${esc(response.status)}):</h2>${apiResponseHeaders(response)}<pre class="code-sample">${esc(apiResponseBody(response))}</pre></aside></div>`;
 }
 function apiRequestHeaders(endpoint){
   const headers = {Authorization: 'Bearer {YOUR_BEARER_TOKEN}', 'Content-Type': 'application/json', Accept: 'application/json'};
@@ -186,8 +186,9 @@ function updateApiCurl(input){
   const page = input.closest('.api-page');
   const endpoint = entriesFor('api')[state.selected]?.item || {};
   try {
-    const body = apiEnteredBody(page);
+    const body = apiEnteredBody(page) ?? page.querySelector('.api-try-body')?.value;
     page.querySelector('.language-bash').textContent = apiCurlCommand(body === undefined ? endpoint : {...endpoint, body}, apiEnteredHeaders(page));
+    page.querySelector('.api-example-body').textContent = apiFormatBody(apiBodyPayload(body === undefined ? endpoint.body : body));
     input.setCustomValidity('');
   } catch {
     input.setCustomValidity('Enter a valid ' + input.dataset.type + ' value.');
@@ -236,6 +237,9 @@ function apiExampleUri(endpoint){
   const query = parameters.filter(parameter => parameter.in === 'query' && parameter.example !== undefined);
   if (query.length && !uri.includes('?')) uri += '?' + query.map(parameter => `${encodeURIComponent(parameter.name)}=${encodeURIComponent(String(parameter.example))}`).join('&');
   return uri;
+}
+function apiFormatBody(body){
+  try { return JSON.stringify(JSON.parse(body), null, 2); } catch { return body; }
 }
 function apiBodyPayload(body){
   if (!body || (Array.isArray(body) && body.length === 0)) return '';
