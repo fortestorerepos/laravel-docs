@@ -21,7 +21,7 @@ const table = (headers, rows) => rows.length ? `<table><thead><tr>${headers.map(
 const list = value => Array.isArray(value) ? value : Object.values(value || {});
 const memberId = (kind, name) => `${kind}_${String(name || '').replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
 const basename = path => String(path || '').split(/[\\/]/).pop();
-const diagramView = {scale: Number(localStorage.getItem('laravel-docs-database-diagram-scale') || '1')};
+const diagramView = {scale: Number(localStorage.getItem('laravel-docs-database-diagram-scale') || '1'), offsetX: 0, offsetY: 0, initialized: false};
 function activate(index){state.selected=index;render();}
 function applyTheme(){
   document.documentElement.dataset.theme = state.theme;
@@ -120,7 +120,7 @@ function dbContent(item){
   return dbDetail(item);
 }
 function databaseDiagramEntries(){
-  const relationships = list(docs.database.relationships);
+  const relationships = diagramRelationships();
   return [{group:null,item:{kind:'database-relations-diagram'},sidebar:`<span class="mono">Diagrams</span><div class="muted">${relationships.length} relationships</div>`}];
 }
 function databaseConstraintEntries(){
@@ -136,10 +136,10 @@ function dbDetail(tableInfo){
 function dbRelationsDiagram(){
   const relationships = list(docs.database.relationships);
 
-  return `<h1>Relations</h1><p class="muted">Compact diagram of tables connected by foreign keys. Primary keys, foreign keys, and indexed columns are shown.</p>${databaseDiagramMarkup('database-relations-canvas')}<h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
+  return `<h1>Relations</h1>${databaseDiagramMarkup('database-relations-canvas')}<h2>Relationships</h2>${table(['Column','References'],relationships.map(relation=>[{html:dbColumnReferenceLink(relation.from_table,relation.from_column)}, {html:dbReferenceLink(relation.to_table,relation.to_column)}]))}`;
 }
 function databaseDiagramMarkup(canvasId){
-  return `<div class="diagram-toolbar"><button type="button" onclick="setDiagramZoom(-0.1)">-</button><button type="button" onclick="setDiagramZoom(0)">Reset</button><button type="button" onclick="setDiagramZoom(0.1)">+</button></div><div class="diagram-shell"><canvas id="${esc(canvasId)}" width="1400" height="900"></canvas></div>`;
+  return `<div class="diagram-toolbar"><button type="button" onclick="setDiagramZoom(-0.1)">-</button><button type="button" onclick="resetDiagramView()">Reset</button><button type="button" onclick="setDiagramZoom(0.1)">+</button></div><div class="diagram-shell"><canvas id="${esc(canvasId)}"></canvas></div>`;
 }
 function dbConstraintsPage(){
   const constraints = list(docs.database.constraints);
@@ -192,40 +192,90 @@ function drawDatabaseDiagram(canvasId = 'database-relations-canvas'){
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
-  const tables = list(docs.database.tables);
-  const relationships = list(docs.database.relationships);
-  const relatedTables = new Set(relationships.flatMap(relation => [relation.from_table, relation.to_table]));
-  const diagramTables = tables.filter(table => relatedTables.has(table.name));
-  const boxWidth = 270;
-  const boxHeight = 230;
-  const rowGap = 54;
-  const colGap = 140;
+  prepareDiagram();
+  routeDiagramConnections();
   const margin = 28;
-  const boxes = layoutDiagramTables(diagramTables, relationships, {boxWidth, boxHeight, rowGap, colGap, margin});
-
-  const maxX = Math.max(900, ...Array.from(boxes.values()).map(box => box.x + box.width + margin));
-  const maxY = Math.max(360, ...Array.from(boxes.values()).map(box => box.y + box.height + margin));
-  const scale = Math.min(1.8, Math.max(0.5, diagramView.scale || 1));
+  const boxes = diagramScene.boxes;
   const ratio = window.devicePixelRatio || 1;
-  canvas.style.width = `${maxX * scale}px`;
-  canvas.style.height = `${maxY * scale}px`;
-  canvas.width = maxX * scale * ratio;
-  canvas.height = maxY * scale * ratio;
-  makeDiagramDraggable(canvas.closest('.diagram-shell'));
+
+  const minX = Math.min(0, ...Array.from(boxes.values()).map(box => box.x - margin));
+  const minY = Math.min(0, ...Array.from(boxes.values()).map(box => box.y - margin));
+  const maxX = Math.max(900, ...Array.from(boxes.values()).map(box => box.x + box.width + margin)) - minX;
+  const maxY = Math.max(360, ...Array.from(boxes.values()).map(box => box.y + box.height + margin)) - minY;
+  if (canvasId !== 'database-relations-canvas') {
+    const printScale = Math.min(1, 8000 / maxX, 8000 / maxY, Math.sqrt(24000000 / (maxX * maxY)));
+    canvas.style.width = `${maxX * printScale}px`;
+    canvas.style.height = `${maxY * printScale}px`;
+    canvas.width = Math.ceil(maxX * printScale);
+    canvas.height = Math.ceil(maxY * printScale);
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(printScale, 0, 0, printScale, -minX * printScale, -minY * printScale);
+    ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
+    diagramScene.routes.forEach(route => drawRelationLine(ctx, route));
+    boxes.forEach(box => drawTableBox(ctx, box));
+    diagramScene.routes.forEach(route => drawRelationPorts(ctx, route));
+    return;
+  }
+
+  const shell = canvas.closest('.diagram-shell');
+  const rect = shell?.getBoundingClientRect();
+  const width = Math.max(320, Math.floor(rect?.width || 900));
+  const height = Math.max(320, Math.floor(rect?.height || 520));
+  if (!diagramView.initialized) resetDiagramView(false);
+  const scale = Math.min(3, Math.max(0.05, diagramView.scale || 1));
+  diagramView.scale = scale;
+
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  makeDiagramInteractive(shell);
 
   const ctx = canvas.getContext('2d');
-  ctx.scale(ratio * scale, ratio * scale);
-  ctx.clearRect(0, 0, maxX, maxY);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.setTransform(ratio * scale, 0, 0, ratio * scale, diagramView.offsetX * ratio, diagramView.offsetY * ratio);
   ctx.font = '14px ui-monospace, SFMono-Regular, Menlo, monospace';
   ctx.lineWidth = 1.5;
 
-  relationships.forEach(relation => drawRelationLine(ctx, boxes.get(relation.from_table), boxes.get(relation.to_table)));
+  diagramScene.routes.forEach(route => drawRelationLine(ctx, route));
   boxes.forEach(box => drawTableBox(ctx, box));
+  diagramScene.routes.forEach(route => drawRelationPorts(ctx, route));
 }
-function setDiagramZoom(delta){
-  diagramView.scale = delta === 0 ? 1 : Math.min(1.8, Math.max(0.5, diagramView.scale + delta));
+function resetDiagramView(redraw = true){
+  if (redraw) {
+    try { localStorage.removeItem(diagramStorageKey()); } catch {}
+    diagramScene.boxes = null;
+    diagramScene.dirty = true;
+    prepareDiagram(false);
+  }
+  diagramView.scale = 1;
+  diagramView.offsetX = 44 - diagramScene.origin.x;
+  diagramView.offsetY = 44 - diagramScene.origin.y;
+  diagramView.initialized = true;
+  try { localStorage.setItem('laravel-docs-database-diagram-scale', String(diagramView.scale)); } catch {}
+  if (redraw) drawDatabaseDiagram();
+}
+function setDiagramZoom(delta, anchor = null){
+  const previousScale = Math.min(3, Math.max(0.05, diagramView.scale || 1));
+  const nextScale = Math.min(3, Math.max(0.05, previousScale + delta));
+  const point = anchor || diagramViewportCenter();
+  const worldX = (point.x - diagramView.offsetX) / previousScale;
+  const worldY = (point.y - diagramView.offsetY) / previousScale;
+
+  diagramView.scale = nextScale;
+  diagramView.offsetX = point.x - worldX * nextScale;
+  diagramView.offsetY = point.y - worldY * nextScale;
+  diagramView.initialized = true;
   localStorage.setItem('laravel-docs-database-diagram-scale', String(diagramView.scale));
   drawDatabaseDiagram();
+}
+function diagramViewportCenter(){
+  const shell = document.getElementById('database-relations-canvas')?.closest('.diagram-shell');
+  const rect = shell?.getBoundingClientRect();
+
+  return {x: (rect?.width || 900) / 2, y: (rect?.height || 520) / 2};
 }
 function downloadPdf(){
   const root = printRoot();
@@ -260,136 +310,432 @@ function printContent(){
 
   return `<div class="print-document"><h1>API Documentation</h1>${list(docs.api.groups).map(group => `<section><h2>${esc(group.name || 'Endpoints')}</h2>${list(group.endpoints).map(apiDetail).join('')}</section>`).join('')}</div>`;
 }
-function layoutDiagramTables(tables, relationships, options){
-  const degree = new Map();
-  const targets = new Map();
-  tables.forEach(table => degree.set(table.name, 0));
-  relationships.forEach(relation => {
-    degree.set(relation.from_table, (degree.get(relation.from_table) || 0) + 1);
-    degree.set(relation.to_table, (degree.get(relation.to_table) || 0) + 1);
-    if (!targets.has(relation.from_table)) targets.set(relation.from_table, []);
-    targets.get(relation.from_table).push(relation.to_table);
+const diagramScene = {boxes: null, routes: [], dirty: true, frame: null, origin: {x: 0, y: 0}};
+function diagramRelationships(){
+  return [...new Map(list(docs.database.relationships).map(edge => [
+    JSON.stringify([edge.from_table, edge.from_column, edge.to_table, edge.to_column]), edge,
+  ])).values()];
+}
+function layoutDiagramTables(tables, relationships){
+  tables = [...new Map(tables.map(table => [table.name, table])).values()];
+  const connected = new Set(relationships.flatMap(edge => [edge.from_table, edge.to_table]));
+  const visible = relationships.length ? tables.filter(table => connected.has(table.name)) : tables;
+  const groups = new Map(), membership = new Map();
+  visible.forEach(table => {
+    const prefix = table.name.split('_')[0].replace(/s$/, '');
+    membership.set(table.name, prefix);
+    if (!groups.has(prefix)) groups.set(prefix, []);
+    groups.get(prefix).push(table);
   });
-
-  const hubCount = Math.max(2, Math.min(6, Math.ceil(Math.sqrt(tables.length))));
-  const hubs = [...tables].sort((first, second) => (degree.get(second.name) || 0) - (degree.get(first.name) || 0) || first.name.localeCompare(second.name)).slice(0, hubCount);
-  const hubNames = new Set(hubs.map(table => table.name));
+  // Attach small lookup groups to their strongest related domain, leaving shared hubs separate.
+  for (const [name, members] of groups) {
+    if (members.length > 2) continue;
+    const affinity = new Map();
+    let degree = 0;
+    relationships.forEach(edge => {
+      const from = membership.get(edge.from_table), to = membership.get(edge.to_table);
+      const other = from === name ? to : to === name ? from : null;
+      if (!other || other === name) return;
+      degree++;
+      affinity.set(other, (affinity.get(other) || 0) + 1);
+    });
+    if (degree > 10) continue;
+    const target = [...affinity].filter(([key]) => groups.get(key)?.length > 2).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!target) continue;
+    groups.get(target).push(...members);
+    members.forEach(table => membership.set(table.name, target));
+    groups.delete(name);
+  }
+  const clusters = [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).map(([name, members]) => {
+    const names = new Set(members.map(table => table.name));
+    const boxes = layoutDiagramCluster(members, relationships.filter(edge => names.has(edge.from_table) && names.has(edge.to_table)));
+    return {name, boxes, columns: [], diagramWidth: Math.max(0, ...[...boxes.values()].map(box => box.x + box.width)) + 260,
+      diagramHeight: Math.max(0, ...[...boxes.values()].map(box => box.y + box.height)) + 260};
+  });
+  const clusterEdges = relationships.map(edge => ({from_table: membership.get(edge.from_table), to_table: membership.get(edge.to_table)}));
+  const positions = layoutDiagramCluster(clusters, clusterEdges);
+  const result = new Map();
+  clusters.forEach(cluster => {
+    const position = positions.get(cluster.name);
+    cluster.boxes.forEach((box, name) => {
+      box.x += position.x; box.y += position.y;
+      result.set(name, box);
+    });
+  });
+  return result;
+}
+function layoutDiagramCluster(tables, relationships){
   const boxes = new Map();
-  const centerY = options.margin + options.boxHeight + options.rowGap;
-
-  hubs.forEach((table, index) => boxes.set(table.name, diagramBox(table, options.margin + index * (options.boxWidth + options.colGap), centerY, options)));
-
-  const leaves = tables.filter(table => !hubNames.has(table.name)).sort((first, second) => primaryTargetIndex(first, hubs, targets) - primaryTargetIndex(second, hubs, targets) || first.name.localeCompare(second.name));
-  const lanes = [
-    {x: options.margin, y: options.margin},
-    {x: options.margin, y: options.margin + (options.boxHeight + options.rowGap) * 2},
-  ];
-
-  leaves.forEach((table, index) => {
-    const lane = lanes[index % lanes.length];
-    boxes.set(table.name, diagramBox(table, lane.x, lane.y, options));
-    lane.x += options.boxWidth + options.colGap;
+  const neighbors = new Map(tables.map(table => [table.name, new Set()]));
+  relationships.forEach(edge => {
+    if (edge.from_table === edge.to_table) return;
+    neighbors.get(edge.from_table)?.add(edge.to_table);
+    neighbors.get(edge.to_table)?.add(edge.from_table);
   });
-
+  const ordered = [...tables].sort((a, b) => neighbors.get(b.name).size - neighbors.get(a.name).size || a.name.localeCompare(b.name));
+  ordered.forEach((table, index) => {
+    const relatedColumns = new Set((table.diagramWidth ? relationships : diagramRelationships()).flatMap(edge => [
+      ...(edge.from_table === table.name && edge.from_column ? [edge.from_column] : []),
+      ...(edge.to_table === table.name && edge.to_column ? [edge.to_column] : []),
+    ]));
+    const shownColumns = list(table.columns).filter(column => column.primary || relatedColumns.has(column.name));
+    relatedColumns.forEach(name => {
+      if (!shownColumns.some(column => column.name === name)) shownColumns.push({name});
+    });
+    if (!shownColumns.length) shownColumns.push(...list(table.columns).slice(0, 3));
+    const references = new Map();
+    diagramRelationships().filter(edge => edge.from_table === table.name).forEach(edge => {
+      if (!references.has(edge.from_column)) references.set(edge.from_column, []);
+      references.get(edge.from_column).push(edge.to_table + '.' + edge.to_column);
+    });
+    const width = table.diagramWidth || Math.max(280, table.name.length * 8.5 + 32,
+      ...shownColumns.map(column => Math.max(column.name.length * 8 + 76, (references.get(column.name) || []).join(', ').length * 6.7 + 64)));
+    const radius = 450 * Math.sqrt(index);
+    const angle = index * 2.3999632297;
+    boxes.set(table.name, {table, shownColumns, references, width, height: table.diagramHeight || 42 + shownColumns.length * 48 + 26,
+      x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, fx: 0, fy: 0});
+  });
+  const nodes = [...boxes.values()];
+  // Springs keep neighbors close; rectangle repulsion leaves room for both cards and routes.
+  for (let step = 0; step < 500; step++) {
+    nodes.forEach(box => { box.fx = 0; box.fy = 0; });
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dx = b.x - a.x || 0.01, dy = b.y - a.y || 0.01;
+        const distance = Math.hypot(dx, dy);
+        const clearanceX = (a.width + b.width) / 2 + 240;
+        const clearanceY = (a.height + b.height) / 2 + 240;
+        const force = Math.min(100, 150000 / (distance * distance));
+        a.fx -= dx / distance * force; a.fy -= dy / distance * force;
+        b.fx += dx / distance * force; b.fy += dy / distance * force;
+        if (Math.abs(dx) < clearanceX && Math.abs(dy) < clearanceY) {
+          const pushX = clearanceX - Math.abs(dx), pushY = clearanceY - Math.abs(dy);
+          if (pushX < pushY) {
+            const push = Math.sign(dx) * pushX * 0.3;
+            a.fx -= push; b.fx += push;
+          } else {
+            const push = Math.sign(dy) * pushY * 0.3;
+            a.fy -= push; b.fy += push;
+          }
+        }
+      }
+    }
+    neighbors.forEach((names, name) => names.forEach(other => {
+      if (name >= other || !boxes.has(other)) return;
+      const a = boxes.get(name), b = boxes.get(other);
+      const dx = b.x - a.x, dy = b.y - a.y, distance = Math.hypot(dx, dy) || 1;
+      const degree = Math.max(neighbors.get(name).size, neighbors.get(other).size);
+      const preferred = Math.max((a.width + b.width) / 2, (a.height + b.height) / 2) + 340 + Math.sqrt(degree) * 65;
+      const force = (distance - preferred) * 0.025;
+      a.fx += dx / distance * force; a.fy += dy / distance * force;
+      b.fx -= dx / distance * force; b.fy -= dy / distance * force;
+    }));
+    const cooling = 1 - step / 560;
+    nodes.forEach(box => {
+      box.x += Math.max(-35, Math.min(35, box.fx)) * cooling;
+      box.y += Math.max(-35, Math.min(35, box.fy)) * cooling;
+    });
+  }
+  nodes.forEach(box => { box.x -= box.width / 2; box.y -= box.height / 2; });
+  // Resolve residual collisions without snapping the graph to rows or columns.
+  for (let pass = 0; pass < 200; pass++) {
+    let collisions = 0;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const dx = b.x + b.width / 2 - a.x - a.width / 2;
+      const dy = b.y + b.height / 2 - a.y - a.height / 2;
+      const overlapX = (a.width + b.width) / 2 + 220 - Math.abs(dx);
+      const overlapY = (a.height + b.height) / 2 + 220 - Math.abs(dy);
+      if (overlapX <= 0 || overlapY <= 0) continue;
+      collisions++;
+      if (overlapX < overlapY) {
+        const shift = (overlapX + 1) / 2 * (dx < 0 ? -1 : 1);
+        a.x -= shift; b.x += shift;
+      } else {
+        const shift = (overlapY + 1) / 2 * (dy < 0 ? -1 : 1);
+        a.y -= shift; b.y += shift;
+      }
+    }
+    if (!collisions) break;
+  }
+  const minX = Math.min(0, ...nodes.map(box => box.x));
+  const minY = Math.min(0, ...nodes.map(box => box.y));
+  nodes.forEach(box => { box.x -= minX; box.y -= minY; });
   return boxes;
 }
-function diagramBox(table, x, y, options){
-  return {table,shownColumns:diagramColumns(table),x,y,width:options.boxWidth,height:options.boxHeight};
+function diagramStorageKey(){
+  const schema = JSON.stringify([location.pathname, docs.database.tables, docs.database.relationships]);
+  let hash = 0;
+  for (let i = 0; i < schema.length; i++) hash = (hash * 31 + schema.charCodeAt(i)) | 0;
+  return 'laravel-docs-table-positions-' + hash;
 }
-function primaryTargetIndex(table, hubs, targets){
-  const targetNames = targets.get(table.name) || [];
-  const index = hubs.findIndex(hub => targetNames.includes(hub.name));
-
-  return index === -1 ? hubs.length : index;
+function prepareDiagram(restorePositions = true){
+  if (diagramScene.boxes) return;
+  const tables = list(docs.database.tables);
+  diagramScene.boxes = layoutDiagramTables(tables, diagramRelationships());
+  const first = diagramScene.boxes.values().next().value;
+  diagramScene.origin = first ? {x: first.x, y: first.y} : {x: 0, y: 0};
+  if (!restorePositions) return;
+  try {
+    const positions = JSON.parse(localStorage.getItem(diagramStorageKey()) || '{}');
+    diagramScene.boxes.forEach((box, name) => {
+      const point = positions[name];
+      if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) Object.assign(box, {x: point.x, y: point.y});
+    });
+  } catch {}
 }
-function diagramColumns(table){
-  const indexed = new Set(list(table.indexes).flatMap(index => list(index.columns)));
-  const foreign = new Set(list(table.foreign_keys).map(key => key.column));
-  const important = list(table.columns).filter(column => column.primary || foreign.has(column.name) || indexed.has(column.name));
-
-  return important.length ? important.slice(0, 5) : list(table.columns).slice(0, 3);
+function diagramColumnAnchorY(box, columnName){
+  const index = box.shownColumns.findIndex(column => column.name === columnName);
+  return box.y + 58 + Math.max(0, index) * 48;
 }
-function drawRelationLine(ctx, from, to){
-  if (!from || !to) return;
-
-  const fromRight = from.x < to.x;
-  const start = {x: fromRight ? from.x + from.width : from.x, y: from.y + Math.min(from.height - 18, 72)};
-  const end = {x: fromRight ? to.x : to.x + to.width, y: to.y + Math.min(to.height - 18, 72)};
-  const midX = start.x + (end.x - start.x) / 2;
-  ctx.strokeStyle = 'rgba(52,64,84,.72)';
+function diagramColumnPort(box, columnName, side){
+  return {x: box.x + (side === 'right' ? box.width : 0), y: diagramColumnAnchorY(box, columnName)};
+}
+function diagramSegmentBlocked(a, b, obstacles){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+  for (const box of obstacles) {
+    const left = box.x + 0.1, right = box.x + box.width - 0.1;
+    const top = box.y + 0.1, bottom = box.y + box.height - 0.1;
+    if (maxX <= left || minX >= right || maxY <= top || minY >= bottom) continue;
+    let low = 0, high = 1;
+    if (Math.abs(dx) > 0.000001) {
+      const t1 = (left - a.x) / dx, t2 = (right - a.x) / dx;
+      low = Math.max(low, Math.min(t1, t2)); high = Math.min(high, Math.max(t1, t2));
+    }
+    if (Math.abs(dy) > 0.000001) {
+      const t1 = (top - a.y) / dy, t2 = (bottom - a.y) / dy;
+      low = Math.max(low, Math.min(t1, t2)); high = Math.min(high, Math.max(t1, t2));
+    }
+    if (low < high) return true;
+  }
+  return false;
+}
+function diagramHeapPush(heap, entry){
+  let index = heap.length;
+  heap.push(entry);
+  while (index > 0) {
+    const parent = (index - 1) >> 1;
+    if (heap[parent].score <= entry.score) break;
+    heap[index] = heap[parent]; index = parent;
+  }
+  heap[index] = entry;
+}
+function diagramHeapPop(heap){
+  const first = heap[0], last = heap.pop();
+  if (!heap.length) return first;
+  let index = 0;
+  while (index * 2 + 1 < heap.length) {
+    let child = index * 2 + 1;
+    if (child + 1 < heap.length && heap[child + 1].score < heap[child].score) child++;
+    if (heap[child].score >= last.score) break;
+    heap[index] = heap[child]; index = child;
+  }
+  heap[index] = last;
+  return first;
+}
+function routeDiagramConnections(){
+  if (!diagramScene.dirty) return;
+  const boxes = diagramScene.boxes;
+  const obstacles = [...boxes.values()].map(box => ({x: box.x - 22, y: box.y - 22, width: box.width + 44, height: box.height + 44}));
+  const corners = obstacles.flatMap(box => [
+    {x: box.x, y: box.y}, {x: box.x + box.width, y: box.y},
+    {x: box.x + box.width, y: box.y + box.height}, {x: box.x, y: box.y + box.height},
+  ]).filter(point => !obstacles.some(box => point.x > box.x + 0.1 && point.x < box.x + box.width - 0.1 && point.y > box.y + 0.1 && point.y < box.y + box.height - 0.1));
+  const adjacency = corners.map(() => []);
+  for (let i = 0; i < corners.length; i++) for (let j = i + 1; j < corners.length; j++) {
+    if (diagramSegmentBlocked(corners[i], corners[j], obstacles)) continue;
+    const length = Math.hypot(corners[i].x - corners[j].x, corners[i].y - corners[j].y);
+    adjacency[i].push([j, length]); adjacency[j].push([i, length]);
+  }
+  const usage = new Map();
+  diagramScene.routes = diagramRelationships().map((relation, index) => {
+    const from = boxes.get(relation.from_table), to = boxes.get(relation.to_table);
+    if (!from || !to) return null;
+    const right = from.x + from.width / 2 < to.x + to.width / 2;
+    const start = diagramColumnPort(from, relation.from_column, right ? 'right' : 'left');
+    const end = diagramColumnPort(to, relation.to_column, right ? 'left' : 'right');
+    const source = {x: start.x + (right ? 22 : -22), y: start.y};
+    const target = {x: end.x + (right ? -22 : 22), y: end.y};
+    const points = [...corners, source, target];
+    const graph = adjacency.map(edges => [...edges]);
+    graph.push([], []);
+    const sourceId = corners.length, targetId = sourceId + 1;
+    for (const id of [sourceId, targetId]) {
+      for (let other = 0; other < id; other++) {
+        if (diagramSegmentBlocked(points[id], points[other], obstacles)) continue;
+        const distance = Math.hypot(points[id].x - points[other].x, points[id].y - points[other].y);
+        graph[id].push([other, distance]); graph[other].push([id, distance]);
+      }
+    }
+    const cost = points.map(() => Infinity), previous = points.map(() => -1), visited = new Set();
+    cost[sourceId] = 0;
+    const heap = [{id: sourceId, score: 0}];
+    while (heap.length) {
+      const current = diagramHeapPop(heap).id;
+      if (current === targetId) break;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      graph[current].forEach(([next, distance]) => {
+        const key = Math.min(current, next) + ':' + Math.max(current, next);
+        const congestion = current < corners.length && next < corners.length ? usage.get(key) || 0 : 0;
+        const candidate = cost[current] + distance + 45 + congestion * 320;
+        if (candidate < cost[next]) {
+          cost[next] = candidate; previous[next] = current;
+          diagramHeapPush(heap, {id: next, score: candidate + Math.hypot(points[next].x - target.x, points[next].y - target.y)});
+        }
+      });
+    }
+    const path = [];
+    if (Number.isFinite(cost[targetId])) {
+      let current = targetId;
+      while (current !== -1) {
+        path.unshift(points[current]);
+        const parent = previous[current];
+        if (parent !== -1) {
+          const key = Math.min(parent, current) + ':' + Math.max(parent, current);
+          usage.set(key, (usage.get(key) || 0) + 1);
+        }
+        current = parent;
+      }
+    } else {
+      // A manually overlapped card can trap a port; keep the connection visible.
+      path.push(source, target);
+    }
+    return {relation, index, points: [start, ...path, end], color: ['#2878b5','#a04885','#2c8774','#b26a24','#6858aa','#bc505a','#557a25'][index % 7]};
+  }).filter(Boolean);
+  diagramScene.dirty = false;
+}
+function drawRelationLine(ctx, route){
+  const points = route.points;
   ctx.beginPath();
-  ctx.moveTo(start.x, start.y);
-  ctx.bezierCurveTo(midX, start.y, midX, end.y, end.x, end.y);
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 5;
   ctx.stroke();
+  ctx.strokeStyle = route.color;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+}
+function drawRelationPorts(ctx, route){
+  const start = route.points[0], end = route.points.at(-1), previous = route.points.at(-2);
+  ctx.fillStyle = route.color;
   ctx.beginPath();
-  ctx.arc(end.x, end.y, 5, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.arc(start.x, start.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+  const angle = Math.atan2(end.y - previous.y, end.x - previous.x);
+  ctx.beginPath();
+  ctx.moveTo(end.x, end.y);
+  ctx.lineTo(end.x - Math.cos(angle - 0.45) * 11, end.y - Math.sin(angle - 0.45) * 11);
+  ctx.lineTo(end.x - Math.cos(angle + 0.45) * 11, end.y - Math.sin(angle + 0.45) * 11);
+  ctx.closePath();
+  ctx.fill();
 }
 function drawTableBox(ctx, box){
   ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#344054';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#667085';
+  ctx.lineWidth = 1.2;
   ctx.fillRect(box.x, box.y, box.width, box.height);
   ctx.strokeRect(box.x, box.y, box.width, box.height);
-  ctx.fillStyle = '#f5f7f4';
-  ctx.fillRect(box.x, box.y, box.width, 30);
-  ctx.strokeRect(box.x, box.y, box.width, 30);
-  ctx.fillStyle = '#172b13';
+  ctx.fillStyle = '#edf2f5';
+  ctx.fillRect(box.x, box.y, box.width, 42);
+  ctx.fillStyle = '#202c39';
   ctx.font = '700 14px ui-monospace, SFMono-Regular, Menlo, monospace';
-  ctx.fillText(box.table.name, box.x + 10, box.y + 20);
-  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
-  ctx.fillStyle = '#667085';
-  ctx.fillText('[table]', box.x + box.width - 58, box.y + 20);
-
+  ctx.fillText(box.table.name, box.x + 14, box.y + 26);
+  const foreign = new Set(list(docs.database.relationships).filter(edge => edge.from_table === box.table.name).map(edge => edge.from_column));
   box.shownColumns.forEach((column, index) => {
-    const y = box.y + 30 + index * 30;
-    ctx.strokeStyle = '#344054';
-    ctx.strokeRect(box.x, y, box.width, 30);
-    ctx.fillStyle = column.primary ? '#d6b900' : column.name.endsWith('_id') ? '#98a2b3' : '#172b13';
-    ctx.fillText(column.primary ? 'key' : column.name.endsWith('_id') ? 'fk' : '*', box.x + 10, y + 20);
-    ctx.fillStyle = '#172b13';
-    ctx.fillText(column.name, box.x + 42, y + 20);
+    const y = box.y + 42 + index * 48;
+    ctx.strokeStyle = '#e4e7ec';
+    ctx.beginPath(); ctx.moveTo(box.x, y); ctx.lineTo(box.x + box.width, y); ctx.stroke();
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = column.primary ? '#9a6d13' : '#48759c';
+    ctx.fillText(column.primary ? 'PK' : foreign.has(column.name) ? 'FK' : '', box.x + 14, y + 20);
+    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = '#344054';
+    ctx.fillText(column.name, box.x + 46, y + 20);
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = '#667085';
+    ctx.fillText((box.references.get(column.name) || []).join(', ') || column.type || '', box.x + 46, y + 37);
   });
-
-  ctx.strokeRect(box.x, box.y + box.height - 26, box.width, 26);
   ctx.fillStyle = '#667085';
-  ctx.fillText(box.table.columns.length > box.shownColumns.length ? '...' : `${box.shownColumns.length} columns`, box.x + 10, box.y + box.height - 8);
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  const extra = Math.max(0, list(box.table.columns).length - box.shownColumns.length);
+  ctx.fillText(extra ? '+' + extra + ' columns' : box.shownColumns.length + ' columns', box.x + 14, box.y + box.height - 9);
 }
-function makeDiagramDraggable(shell){
-  if (!shell || shell.dataset.draggable === 'true') return;
-
-  shell.dataset.draggable = 'true';
+function requestDiagramDraw(){
+  if (diagramScene.frame !== null) return;
+  diagramScene.frame = requestAnimationFrame(() => {
+    diagramScene.frame = null;
+    drawDatabaseDiagram();
+  });
+}
+function diagramWorldPoint(shell, event){
+  const rect = shell.getBoundingClientRect();
+  return {x: (event.clientX - rect.left - diagramView.offsetX) / diagramView.scale,
+    y: (event.clientY - rect.top - diagramView.offsetY) / diagramView.scale};
+}
+function makeDiagramInteractive(shell){
+  if (!shell || shell.dataset.interactive === 'true') return;
+  shell.dataset.interactive = 'true';
   let dragging = false;
-  let startX = 0;
-  let startY = 0;
-  let scrollLeft = 0;
-  let scrollTop = 0;
+  let gesture = null;
   const stop = event => {
+    if (gesture && event.pointerId !== gesture.pointerId) return;
+    if (gesture?.box) {
+      try {
+        localStorage.setItem(diagramStorageKey(), JSON.stringify(Object.fromEntries(
+          [...diagramScene.boxes].map(([name, box]) => [name, {x: box.x, y: box.y}])
+        )));
+      } catch {}
+    }
     dragging = false;
+    gesture = null;
     shell.classList.remove('dragging');
     if (shell.hasPointerCapture(event.pointerId)) shell.releasePointerCapture(event.pointerId);
   };
-
+  shell.addEventListener('wheel', event => {
+    event.preventDefault();
+    const rect = shell.getBoundingClientRect();
+    const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
+    setDiagramZoom(diagramView.scale * (Math.exp(-event.deltaY * units * 0.0015) - 1),
+      {x: event.clientX - rect.left, y: event.clientY - rect.top});
+  }, {passive:false});
   shell.addEventListener('pointerdown', event => {
+    if (event.button !== 0 && event.button !== 1) return;
+    if (gesture) return;
+    event.preventDefault();
+    const point = diagramWorldPoint(shell, event);
+    const box = event.button === 0 ? [...diagramScene.boxes.values()].reverse().find(box =>
+      point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height) : null;
+    gesture = {pointerId: event.pointerId, box, point, x: event.clientX, y: event.clientY,
+      originX: box ? box.x : diagramView.offsetX, originY: box ? box.y : diagramView.offsetY};
     dragging = true;
-    startX = event.clientX;
-    startY = event.clientY;
-    scrollLeft = shell.scrollLeft;
-    scrollTop = shell.scrollTop;
     shell.classList.add('dragging');
     shell.setPointerCapture(event.pointerId);
   });
   shell.addEventListener('pointermove', event => {
-    if (!dragging) return;
-    shell.scrollLeft = scrollLeft - (event.clientX - startX);
-    shell.scrollTop = scrollTop - (event.clientY - startY);
+    if (!dragging || event.pointerId !== gesture.pointerId) return;
+    if (gesture.box) {
+      const point = diagramWorldPoint(shell, event);
+      gesture.box.x = gesture.originX + point.x - gesture.point.x;
+      gesture.box.y = gesture.originY + point.y - gesture.point.y;
+      diagramScene.dirty = true;
+    } else {
+      diagramView.offsetX = gesture.originX + event.clientX - gesture.x;
+      diagramView.offsetY = gesture.originY + event.clientY - gesture.y;
+    }
+    requestDiagramDraw();
   });
   shell.addEventListener('pointerup', stop);
   shell.addEventListener('pointercancel', stop);
-  shell.addEventListener('lostpointercapture', () => {
-    dragging = false;
-    shell.classList.remove('dragging');
-  });
+  shell.addEventListener('lostpointercapture', stop);
+  diagramScene.observer?.disconnect();
+  diagramScene.observer = new ResizeObserver(requestDiagramDraw);
+  diagramScene.observer.observe(shell);
 }
 function codeDetail(type){
   return `<div class="code-page"><article>${codeHeader(type)}${codeToc(type)}${memberSummary('Interfaces', type.interfaces || [], 'interface')}${memberSummary('Cases', type.cases || [], 'case')}${enumDetails(type)}${memberSummary('Properties', type.properties || [], 'property')}${memberSummary('Methods', type.methods || [], 'method')}${propertyDetails(type)}${methodDetails(type)}</article>${onThisPage(type)}</div>`;

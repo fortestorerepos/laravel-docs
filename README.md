@@ -133,6 +133,7 @@ storage/app/laravel-docs/
 The UI is a compact static HTML page with `API`, `DB`, and `Code` tabs in the header.
 Its source lives in package Blade views and assets under `resources/views/static`, so the generated frontend can be customized without editing PHP generator strings.
 The header also includes a Download PDF action that exports the currently opened section.
+The database diagram places related tables across a pannable, zoomable canvas and routes connections around cards. Drag a table to rearrange it, drag empty space to pan, and use the mouse wheel to zoom. Table positions are saved in your browser for that schema; Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Changelog
 
