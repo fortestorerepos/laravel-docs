@@ -142,6 +142,8 @@ Headers and body parameters display examples before trying a request. Click **Tr
 Base URL and Authorization inputs are saved in browser local storage for this documentation directory and restored across endpoints and reloads. Clear either input to clear its saved value.
 
 The console's **Example body:** section displays the raw request body, formats JSON for readability, and updates as body inputs change.
+
+The header search opens a command palette across API, DB, and Code documentation, including table columns and code members. Use `api:compras`, `db:users`, or `code:User` to limit results to a section. Results show their location and open by click or Enter; arrow keys change the selection, Escape closes the palette, and Ctrl/Cmd+K opens it. Search works offline in generated HTML.
 The database diagram places related tables across a pannable, zoomable canvas and routes connections around cards. Drag a table to rearrange it, drag empty space to pan, and use the mouse wheel to zoom. Table positions are saved in your browser for that schema; Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Changelog

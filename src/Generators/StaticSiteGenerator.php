@@ -25,6 +25,7 @@ class StaticSiteGenerator
 
         $this->copyAsset('index.css', $outputPath);
         $this->copyAsset('index.js', $outputPath);
+        $this->copyAsset('search.js', $outputPath);
 
         foreach ($this->pages() as $filename => $tab) {
             $this->files->put($outputPath.'/'.$filename, $this->html($data, $tab));

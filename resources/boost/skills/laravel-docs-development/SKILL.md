@@ -85,6 +85,8 @@ Keep Scribe's companion OpenAPI file with its collection to include body field t
 Base URL and Authorization values persist in browser local storage for the documentation directory across endpoint changes and reloads. Clearing an input clears its saved value.
 
 The console includes an **Example body:** section with the raw request body (formatted for JSON), updated when body inputs change.
+
+Global header search covers API endpoints, database tables/columns, and code types/members. Prefix queries with `api:`, `db:`, or `code:` to scope results. Ctrl/Cmd+K opens the palette; arrow keys select, Enter opens the result, and Escape closes it. Search runs locally in the generated HTML.
 In the database diagram, drag tables to rearrange them, drag empty space to pan, and use the mouse wheel to zoom. Positions are saved in the browser per schema. Reset clears saved positions and restores the original table layout, connections, zoom, and camera position.
 
 ## Rules, References, and Templates

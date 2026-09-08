@@ -163,6 +163,8 @@ XML);
         ->and($files->exists($basePath.'/generated/code.html'))->toBeTrue()
         ->and($files->exists($basePath.'/generated/assets/index.css'))->toBeTrue()
         ->and($files->exists($basePath.'/generated/assets/index.js'))->toBeTrue();
+    expect($files->exists($basePath.'/generated/assets/search.js'))->toBeTrue()
+        ->and($files->get($basePath.'/generated/api.html'))->toContain('id="global-search"', 'id="search-palette"', 'assets/search.js');
 
     $html = $files->get($basePath.'/generated/index.html');
     $databaseHtml = $files->get($basePath.'/generated/database.html');
